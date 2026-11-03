@@ -4,9 +4,8 @@ use ieee.numeric_std.all;
 
 entity top_poly_mul is
     generic(
-        WT         : integer := 3;  -- 66 o 75 seg√∫n el muestreo
-        WORD_COUNT : integer := 1;  -- Palabras necesarias para 17669 bits
-        N_BITS     : integer := 32 -- Tama√±o exacto del anillo en bits
+        WT         : integer := 3; -- N˙mero de desplazamientos no nulos
+        WORD_COUNT : integer := 3  -- 3 palabras densas de 32 bits
     );
     port(
         clk   : in std_logic;
@@ -14,127 +13,127 @@ entity top_poly_mul is
         start : in std_logic;
         done  : out std_logic;
 
-        -- Puertos opcionales de carga externa (√∫tiles para inicializar memorias desde fuera)
-        ext_pos_we   : in std_logic := '0';
-        ext_pos_addr : in unsigned(6 downto 0) := (others => '0');
-        ext_pos_din  : in unsigned(14 downto 0) := (others => '0');
+        -- Interfaz externa de carga para memoria de posiciones
+        init_pos_we   : in std_logic                       := '0';
+        init_pos_addr : in unsigned(6 downto 0)            := (others => '0');
+        init_pos_data : in unsigned(14 downto 0)           := (others => '0');
 
-        ext_dense_we   : in std_logic := '0';
-        ext_dense_addr : in unsigned(9 downto 0) := (others => '0');
-        ext_dense_din  : in std_logic_vector(31 downto 0) := (others => '0')
+        -- Interfaz externa de carga para memoria densa
+        init_dense_we   : in std_logic                     := '0';
+        init_dense_addr : in unsigned(9 downto 0)          := (others => '0');
+        init_dense_data : in std_logic_vector(31 downto 0) := (others => '0');
+
+        -- Interfaz de lectura externa para el acumulador final
+        acc_read_addr : in  unsigned(10 downto 0)          := (others => '0');
+        acc_read_dout : out std_logic_vector(31 downto 0)
     );
 end entity;
 
 architecture structural of top_poly_mul is
 
-    -- Se√±ales de interconexi√≥n interna entre poly_mul y las memorias
-    signal pos_addr   : unsigned(6 downto 0);
-    signal pos_data   : unsigned(14 downto 0);
-    
-    signal dense_addr : unsigned(9 downto 0);
-    signal dense_data : std_logic_vector(31 downto 0);
-    
-    signal acc_addr_a : unsigned(10 downto 0);
-    signal acc_addr_b : unsigned(10 downto 0);
-    signal acc_din_a  : std_logic_vector(31 downto 0);
-    signal acc_din_b  : std_logic_vector(31 downto 0);
-    signal acc_dout_a : std_logic_vector(31 downto 0);
-    signal acc_dout_b : std_logic_vector(31 downto 0);
-    signal acc_we_a   : std_logic;
-    signal acc_we_b   : std_logic;
+    -- SeÒales de interconexiÛn
+    signal pos_addr_core : unsigned(6 downto 0);
+    signal pos_data_core : unsigned(14 downto 0);
+    signal pos_addr_mux  : unsigned(6 downto 0);
 
-    -- Multiplexaci√≥n para permitir escritura externa o de prueba en las memorias
-    signal final_pos_we   : std_logic;
-    signal final_pos_addr : unsigned(6 downto 0);
-    signal final_pos_din  : unsigned(14 downto 0);
+    signal dense_addr_core : unsigned(9 downto 0);
+    signal dense_data_core : std_logic_vector(31 downto 0);
+    signal dense_addr_mux  : unsigned(9 downto 0);
 
-    signal final_dense_we   : std_logic;
-    signal final_dense_addr : unsigned(9 downto 0);
-    signal final_dense_din  : std_logic_vector(31 downto 0);
+    signal acc_addr_a_core : unsigned(10 downto 0);
+    signal acc_addr_b_core : unsigned(10 downto 0);
+    signal acc_addr_a_mux  : unsigned(10 downto 0);
+
+    signal acc_din_a_core  : std_logic_vector(31 downto 0);
+    signal acc_din_b_core  : std_logic_vector(31 downto 0);
+    signal acc_dout_a_core : std_logic_vector(31 downto 0);
+    signal acc_dout_b_core : std_logic_vector(31 downto 0);
+
+    signal acc_we_a_core   : std_logic;
+    signal acc_we_b_core   : std_logic;
+    signal done_core       : std_logic;
 
 begin
 
-    -- Multiplexores de control para la memoria posicional
-    -- (Durante la operaci√≥n normal del multiplicador, no escribe en position_mem, solo lee)
-    final_pos_we   <= ext_pos_we;
-    final_pos_addr <= ext_pos_addr when ext_pos_we = '1' else (others => '0');
-    final_pos_din  <= ext_pos_din;
+    done <= done_core;
 
-    -- Multiplexores de control para la memoria del vector denso
-    final_dense_we   <= ext_dense_we;
-    final_dense_addr <= ext_dense_addr when ext_dense_we = '1' else dense_addr;
-    final_dense_din  <= ext_dense_din;
+    -- Multiplexores de control para la carga inicial vs ejecuciÛn FSM
+    pos_addr_mux   <= init_pos_addr when (init_pos_we = '1') else pos_addr_core;
+    dense_addr_mux <= init_dense_addr when (init_dense_we = '1') else dense_addr_core;
+    
+    -- El puerto A del acumulador se conmuta a lectura externa cuando finaliza la FSM
+    acc_addr_a_mux <= acc_read_addr when (done_core = '1') else acc_addr_a_core;
+    acc_read_dout  <= acc_dout_a_core;
 
-    ---------------------------------------------------------------------------
-    -- 1. Instancia del Multiplicador Polinomial
-    ---------------------------------------------------------------------------
+    -- Instancia del N˙cleo de MultiplicaciÛn Polinomial
     u_poly_mul : entity work.poly_mul
-        generic map (
+        generic map(
             WT         => WT,
-            WORD_COUNT => WORD_COUNT,
-            N_BITS     => N_BITS
+            WORD_COUNT => WORD_COUNT
         )
-        port map (
+        port map(
             clk        => clk,
             rst        => rst,
             start      => start,
-            pos_addr   => pos_addr,
-            pos_data   => pos_data,
-            dense_addr => dense_addr,
-            dense_data => dense_data,
-            acc_addr_a => acc_addr_a,
-            acc_addr_b => acc_addr_b,
-            acc_din_a  => acc_din_a,
-            acc_din_b  => acc_din_b,
-            acc_dout_a => acc_dout_a,
-            acc_dout_b => acc_dout_b,
-            acc_we_a   => acc_we_a,
-            acc_we_b   => acc_we_b,
-            done       => done
+            pos_addr   => pos_addr_core,
+            pos_data   => pos_data_core,
+            dense_addr => dense_addr_core,
+            dense_data => dense_data_core,
+            acc_addr_a => acc_addr_a_core,
+            acc_addr_b => acc_addr_b_core,
+            acc_din_a  => acc_din_a_core,
+            acc_din_b  => acc_din_b_core,
+            acc_dout_a => acc_dout_a_core,
+            acc_dout_b => acc_dout_b_core,
+            acc_we_a   => acc_we_a_core,
+            acc_we_b   => acc_we_b_core,
+            done       => done_core
         );
 
-    ---------------------------------------------------------------------------
-    -- 2. Instancia de la Memoria Posicional (`position_mem`)
-    ---------------------------------------------------------------------------
+    -- Instancia Memoria de Posiciones (Dispersa)
     u_position_mem : entity work.position_mem
-        port map (
-            clk     => clk,
-            rst     => rst,
-            we      => final_pos_we,
-            addr    => final_pos_addr,
-            din     => final_pos_din,
-            re_addr => pos_addr,
-            dout    => pos_data
-        );
-
-    ---------------------------------------------------------------------------
-    -- 3. Instancia del Vector Denso (`BRAM_singleport`)
-    ---------------------------------------------------------------------------
-    u_dense_mem : entity work.BRAM_singleport
-        port map (
+        generic map(
+            DATA_WIDTH => 15,
+            ADDR_WIDTH => 7
+        )
+        port map(
             clk  => clk,
-            we   => final_dense_we,
-            addr => final_dense_addr,
-            din  => final_dense_din,
-            dout => dense_data
+            we   => init_pos_we,
+            addr => pos_addr_mux,
+            din  => init_pos_data,
+            dout => pos_data_core
         );
 
-    ---------------------------------------------------------------------------
-    -- 4. Instancia de la Memoria Acumuladora (`BRAM_dualport`)
-    ---------------------------------------------------------------------------
-    u_acc_bram : entity work.BRAM_dualport
-        port map (
+    -- Instancia Memoria Densa (Single-Port BRAM)
+    u_dense_mem : entity work.bram_singleport
+        generic map(
+            DATA_WIDTH => 32,
+            ADDR_WIDTH => 10
+        )
+        port map(
+            clk  => clk,
+            we   => init_dense_we,
+            addr => dense_addr_mux,
+            din  => init_dense_data,
+            dout => dense_data_core
+        );
+
+    -- Instancia Acumulador BRAM (Dual-Port)
+    u_acc_mem : entity work.bram_dualport
+        generic map(
+            DATA_WIDTH => 32,
+            ADDR_WIDTH => 11
+        )
+        port map(
             clk    => clk,
-            -- Puerto A: Utilizado exclusivamente para lectura en el pipeline
-            we_a   => acc_we_a,
-            addr_a => acc_addr_a,
-            din_a  => acc_din_a,
-            dout_a => acc_dout_a,
-            -- Puerto B: Utilizado exclusivamente para escritura del resultado XOR
-            we_b   => acc_we_b,
-            addr_b => acc_addr_b,
-            din_b  => acc_din_b,
-            dout_b => acc_dout_b
+            we_a   => acc_we_a_core,
+            addr_a => acc_addr_a_mux,
+            din_a  => acc_din_a_core,
+            dout_a => acc_dout_a_core,
+            we_b   => acc_we_b_core,
+            addr_b => acc_addr_b_core,
+            din_b  => acc_din_b_core,
+            dout_b => acc_dout_b_core
         );
 
 end architecture;

@@ -7,107 +7,125 @@ end entity;
 
 architecture sim of tb_top_poly_mul is
 
-    -- Par谩metros de configuraci贸n (usando una escala reducida de prueba para claridad)
-    constant WT_C         : integer := 2;
-    constant WORD_COUNT_C : integer := 5;
-    constant N_BITS_C       : integer := 135; -- Tama帽o exacto del anillo en bits
-    constant CLK_PERIOD   : time := 10 ns;
+    constant CLK_PERIOD : time := 10 ns;
 
-    -- Se帽ales del testbench
+    constant WT         : integer := 3;
+    constant WORD_COUNT : integer := 3;
+
     signal clk   : std_logic := '0';
-    signal rst   : std_logic := '1';
+    signal rst   : std_logic := '0';
     signal start : std_logic := '0';
     signal done  : std_logic;
 
-    -- Puertos de control externo para precargar memorias
-    signal ext_pos_we     : std_logic := '0';
-    signal ext_pos_addr   : unsigned(6 downto 0) := (others => '0');
-    signal ext_pos_din    : unsigned(14 downto 0) := (others => '0');
+    -- Entradas para la precarga de memorias
+    signal init_pos_we   : std_logic := '0';
+    signal init_pos_addr : unsigned(6 downto 0) := (others => '0');
+    signal init_pos_data : unsigned(14 downto 0) := (others => '0');
 
-    signal ext_dense_we   : std_logic := '0';
-    signal ext_dense_addr : unsigned(9 downto 0) := (others => '0');
-    signal ext_dense_din  : std_logic_vector(31 downto 0) := (others => '0');
+    signal init_dense_we   : std_logic := '0';
+    signal init_dense_addr : unsigned(9 downto 0) := (others => '0');
+    signal init_dense_data : std_logic_vector(31 downto 0) := (others => '0');
+
+    signal acc_read_addr : unsigned(10 downto 0) := (others => '0');
+    signal acc_read_dout : std_logic_vector(31 downto 0);
 
 begin
 
-    -- Instancia del Top-Level bajo prueba (DUT)
-    DUT: entity work.top_poly_mul
-        generic map (
-            WT         => WT_C,
-            WORD_COUNT => WORD_COUNT_C,
-            N_BITS     => N_BITS_C
+    -- Generador de reloj (100 MHz)
+    clk <= not clk after CLK_PERIOD / 2;
+
+    -- UUT (Unit Under Test)
+    uut: entity work.top_poly_mul
+        generic map(
+            WT         => WT,
+            WORD_COUNT => WORD_COUNT
         )
-        port map (
-            clk            => clk,
-            rst            => rst,
-            start          => start,
-            done           => done,
-            ext_pos_we     => ext_pos_we,
-            ext_pos_addr   => ext_pos_addr,
-            ext_pos_din    => ext_pos_din,
-            ext_dense_we   => ext_dense_we,
-            ext_dense_addr => ext_dense_addr,
-            ext_dense_din  => ext_dense_din
+        port map(
+            clk             => clk,
+            rst             => rst,
+            start           => start,
+            done            => done,
+            init_pos_we     => init_pos_we,
+            init_pos_addr   => init_pos_addr,
+            init_pos_data   => init_pos_data,
+            init_dense_we   => init_dense_we,
+            init_dense_addr => init_dense_addr,
+            init_dense_data => init_dense_data,
+            acc_read_addr   => acc_read_addr,
+            acc_read_dout   => acc_read_dout
         );
 
-    -- Generador de Reloj
-    clk_process : process
+    -- Proceso de est韒ulos
+    stim_proc: process
     begin
-        clk <= '0';
-        wait for CLK_PERIOD / 2;
-        clk <= '1';
-        wait for CLK_PERIOD / 2;
-    end process;
-
-    -- Proceso principal de est铆mulos y carga de datos
-    stimulus_proc : process
-    begin
-        -- 1. Reset del Sistema
-        rst          <= '1';
-        start        <= '0';
-        ext_pos_we   <= '0';
-        ext_dense_we <= '0';
-        wait for 40 ns;
-        
+        -- 1. Reset inicial
+        rst <= '1';
+        wait for CLK_PERIOD * 2;
         rst <= '0';
-        wait for 20 ns;
+        wait for CLK_PERIOD;
 
-        report ">>> Iniciando precarga de memorias (Posicional y Vector Denso)...";
-
-        -- 2. Precargar Memoria Posicional (10 posiciones de prueba dentro de 128 bits)
-        -- Formato: pos_data de 15 bits -> [14..5] = word_offset, [4..0] = bit_offset
-        -- Para 128 bits, los offsets de palabras van de 0 a 3.
+        -- 2. Cargar Memoria Densa (3 palabras de 32 bits)
+        init_dense_we <= '1';
         
-        -- Posici贸n 0: bit 3  -> word 0, bit 3
-        ext_pos_addr <= to_unsigned(0, 7); ext_pos_din <= to_unsigned(3, 15);   ext_pos_we <= '1'; wait for CLK_PERIOD;
-        -- Posici贸n 1: bit 15 -> word 0, bit 15
-        ext_pos_addr <= to_unsigned(1, 7); ext_pos_din <= to_unsigned(45, 15);  ext_pos_we <= '1'; wait for CLK_PERIOD;
-        
-        ext_pos_we <= '0';
+        init_dense_addr <= to_unsigned(0, 10);
+        init_dense_data <= x"C000000F";
+        wait for CLK_PERIOD;
 
-        -- 3. Precargar Memoria del Vector Denso (4 palabras de 32 bits = 128 bits)
-        ext_dense_addr <= to_unsigned(0, 10); ext_dense_din <= x"9009C00C"; ext_dense_we <= '1'; wait for CLK_PERIOD;
-        ext_dense_addr <= to_unsigned(1, 10); ext_dense_din <= x"9009C00C"; ext_dense_we <= '1'; wait for CLK_PERIOD;
-        ext_dense_addr <= to_unsigned(2, 10); ext_dense_din <= x"9009C00C"; ext_dense_we <= '1'; wait for CLK_PERIOD;
-        ext_dense_addr <= to_unsigned(3, 10); ext_dense_din <= x"9009C00C"; ext_dense_we <= '1'; wait for CLK_PERIOD;
-        ext_dense_addr <= to_unsigned(4, 10); ext_dense_din <= x"0000007F"; ext_dense_we <= '1'; wait for CLK_PERIOD;
-        
-        ext_dense_we <= '0';
-        wait for 20 ns;
+        init_dense_addr <= to_unsigned(1, 10);
+        init_dense_data <= x"C000000F";
+        wait for CLK_PERIOD;
 
-        -- 4. Disparar el Multiplicador Polinomial
-        report ">>> Disparando la senal START...";
+        init_dense_addr <= to_unsigned(2, 10);
+        init_dense_data <= x"C000000F";
+        wait for CLK_PERIOD;
+        
+        init_dense_we   <= '0';
+
+        -- 3. Cargar Memoria de Posiciones (Desplazamientos: 3, 35 y 70)
+        init_pos_we <= '1';
+
+        -- Posici髇 0: Desplazamiento de 3 bits
+        init_pos_addr <= to_unsigned(0, 7);
+        init_pos_data <= to_unsigned(3, 15);
+        wait for CLK_PERIOD;
+
+        -- Posici髇 1: Desplazamiento de 35 bits (word_offset=1, bit_offset=3)
+        init_pos_addr <= to_unsigned(1, 7);
+        init_pos_data <= to_unsigned(35, 15);
+        wait for CLK_PERIOD;
+
+        -- Posici髇 2: Desplazamiento de 70 bits (word_offset=2, bit_offset=6)
+        init_pos_addr <= to_unsigned(2, 7);
+        init_pos_data <= to_unsigned(70, 15);
+        wait for CLK_PERIOD;
+
+        init_pos_we <= '0';
+        wait for CLK_PERIOD * 2;
+
+        -- 4. Iniciar la Multiplicaci髇
         start <= '1';
         wait for CLK_PERIOD;
         start <= '0';
 
-        -- 5. Esperar a que la bandera 'done' se active
-        wait until rising_edge(done);
-        report ">>> 隆Multiplicaci贸n completada con 茅xito por el TOP!";
+        -- 5. Esperar finalizaci髇 del c髆puto y reducci髇
+        wait until done = '1';
+        wait for CLK_PERIOD * 2;
 
-        -- Finalizar simulaci贸n
-        wait for 50 ns;
-        assert false report "Simulaci贸n finalizada correctamente." severity failure;
+        -- 6. Leer los resultados finales del anillo (Palabras 0, 1 y 2)
+        acc_read_addr <= to_unsigned(0, 11);
+        wait for CLK_PERIOD * 2;
+        -- Verificaci髇: acc_read_dout contiene la palabra 0 reducida
+
+        acc_read_addr <= to_unsigned(1, 11);
+        wait for CLK_PERIOD * 2;
+        -- Verificaci髇: acc_read_dout contiene la palabra 1 reducida
+
+        acc_read_addr <= to_unsigned(2, 11);
+        wait for CLK_PERIOD * 2;
+        -- Verificaci髇: acc_read_dout contiene la palabra 2 reducida
+
+        report "Simulaci髇 completada con 閤ito." severity note;
+        wait;
     end process;
 
 end architecture;
