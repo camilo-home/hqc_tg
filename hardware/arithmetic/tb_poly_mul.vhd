@@ -5,25 +5,30 @@ use ieee.numeric_std.all;
 entity tb_poly_mul is
 end entity;
 
-architecture sim of tb_poly_mul is
+architecture behavioral of tb_poly_mul is
 
-    -- Constantes de configuraci贸n para 128 bits y 10 posiciones activas
-    constant WT_C         : integer := 10;
-    constant WORD_COUNT_C : integer := 4; -- 128 bits / 32 bits por palabra = 4 palabras
-    constant CLK_PERIOD   : time := 10 ns;
+    constant CLK_PERIOD : time := 10 ns;
+    constant WT_VAL     : integer := 3;
+    constant WORD_CNT   : integer := 4;
 
-    -- Se帽ales de est铆mulo y control
-    signal clk   : std_logic := '0';
-    signal rst   : std_logic := '1';
-    signal start : std_logic := '0';
-    signal done  : std_logic;
+    signal clk        : std_logic := '0';
+    signal rst        : std_logic := '1';
+    signal start      : std_logic := '0';
+    signal done       : std_logic;
 
-    -- Interfaces de memoria
+    -- Position memory signals
     signal pos_addr   : unsigned(6 downto 0);
     signal pos_data   : unsigned(14 downto 0);
+    signal pos_we     : std_logic := '0';
+    signal pos_din    : unsigned(14 downto 0) := (others => '0');
+    
+    -- Dense memory signals (Conectados directo, sin multiplexor)
     signal dense_addr : unsigned(9 downto 0);
     signal dense_data : std_logic_vector(31 downto 0);
-    
+    signal dense_we   : std_logic := '0';
+    signal dense_din  : std_logic_vector(31 downto 0) := (others => '0');
+
+    -- Accumulator BRAM signals
     signal acc_addr_a : unsigned(10 downto 0);
     signal acc_addr_b : unsigned(10 downto 0);
     signal acc_din_a  : std_logic_vector(31 downto 0);
@@ -33,42 +38,13 @@ architecture sim of tb_poly_mul is
     signal acc_we_a   : std_logic;
     signal acc_we_b   : std_logic;
 
-    -- Modelos de Memorias (ROMs y RAMs para simulaci贸n)
-    -- 1. Memoria Posicional: 10 posiciones con 铆ndices de bits aleatorios dentro de 0 a 127
-    type pos_rom_type is array (0 to WT_C - 1) of unsigned(14 downto 0);
-    constant POS_ROM : pos_rom_type := (
-        to_unsigned(3, 15),   -- Posici贸n de bit 3
-        to_unsigned(15, 15),  -- Posici贸n de bit 15
-        to_unsigned(34, 15),  -- Posici贸n de bit 34 (Word 1, bit 2)
-        to_unsigned(47, 15),  -- Posici贸n de bit 47
-        to_unsigned(68, 15),  -- Posici贸n de bit 68 (Word 2, bit 4)
-        to_unsigned(81, 15),  -- Posici贸n de bit 81
-        to_unsigned(99, 15),  -- Posici贸n de bit 99 (Word 3, bit 3)
-        to_unsigned(110, 15), -- Posici贸n de bit 110
-        to_unsigned(121, 15), -- Posici贸n de bit 121
-        to_unsigned(127, 15)  -- Posici贸n de bit 127 (脷ltimo bit del vector de 128 bits)
-    );
-
-    -- 2. Memoria Vector Denso: 4 palabras de 32 bits (128 bits en total)
-    type dense_rom_type is array (0 to WORD_COUNT_C - 1) of std_logic_vector(31 downto 0);
-    constant DENSE_ROM : dense_rom_type := (
-        x"A5A5A5A5", -- Palabra 0 (Bits 0 a 31)
-        x"12345678", -- Palabra 1 (Bits 32 a 63)
-        x"DEADBEEF", -- Palabra 2 (Bits 64 a 95)
-        x"0F0F0F0F"  -- Palabra 3 (Bits 96 a 127)
-    );
-
-    -- 3. Memoria Acumuladora BRAM (2048 posiciones de 32 bits)
-    type acc_ram_type is array (0 to 2047) of std_logic_vector(31 downto 0);
-    signal acc_ram : acc_ram_type := (others => (others => '0'));
-
 begin
 
-    -- Instancia del m贸dulo bajo prueba (DUT)
+    -- 1. DUT (M骴ulo Multiplicador)
     DUT: entity work.poly_mul
         generic map (
-            WT         => WT_C,
-            WORD_COUNT => WORD_COUNT_C
+            WT         => WT_VAL,
+            WORD_COUNT => WORD_CNT
         )
         port map (
             clk        => clk,
@@ -76,8 +52,8 @@ begin
             start      => start,
             pos_addr   => pos_addr,
             pos_data   => pos_data,
-            dense_addr => dense_addr,
-            dense_data => dense_data,
+            dense_addr => dense_addr, -- Salida directa
+            dense_data => dense_data, -- Entrada directa
             acc_addr_a => acc_addr_a,
             acc_addr_b => acc_addr_b,
             acc_din_a  => acc_din_a,
@@ -89,7 +65,42 @@ begin
             done       => done
         );
 
-    -- Generador de Reloj
+    -- 2. Memoria de Posiciones (Asumimos precargada o manejada internamente)
+    U_POS_MEM: entity work.position_mem
+        port map (
+            clk     => clk,
+            rst     => rst,
+            we      => pos_we,
+            addr    => pos_addr,
+            din     => pos_din,
+            dout    => pos_data
+        );
+
+    -- 3. Memoria Densa Single Port (Conexi髇 Directa)
+    U_DENSE_MEM: entity work.BRAM_singleport
+        port map (
+            clk  => clk,
+            we   => dense_we,            -- Nunca escribimos desde el TB
+            addr => dense_addr,     -- Conexi髇 directa y 鷑ica a la salida del DUT
+            din  => dense_din,
+            dout => dense_data
+        );
+
+    -- 4. Memoria Acumuladora Dual Port
+    U_ACC_BRAM: entity work.BRAM_dualport
+        port map (
+            clk    => clk,
+            we_a   => acc_we_a,
+            addr_a => acc_addr_a,
+            din_a  => acc_din_a,
+            dout_a => acc_dout_a,
+            we_b   => acc_we_b,
+            addr_b => acc_addr_b,
+            din_b  => acc_din_b,
+            dout_b => acc_dout_b
+        );
+
+    -- Reloj
     clk_process : process
     begin
         clk <= '0';
@@ -98,72 +109,36 @@ begin
         wait for CLK_PERIOD / 2;
     end process;
 
-    -- Modelo de Memoria Posicional (ROM s铆ncrona)
-    pos_mem_proc : process(clk)
+    -- Control de Simulaci髇
+    stim_proc: process
     begin
-        if rising_edge(clk) then
-            pos_data <= POS_ROM(to_integer(pos_addr));
-        end if;
-    end process;
-
-    -- Modelo de Memoria de Vector Denso (ROM s铆ncrona)
-    dense_mem_proc : process(clk)
-    begin
-        if rising_edge(clk) then
-            if to_integer(dense_addr) < WORD_COUNT_C then
-                dense_data <= DENSE_ROM(to_integer(dense_addr));
-            else
-                dense_data <= (others => '0');
-            end if;
-        end if;
-    end process;
-
-    -- Modelo de Memoria Acumuladora BRAM (Dual-Port S铆ncrona)
-    acc_ram_proc : process(clk)
-    begin
-        if rising_edge(clk) then
-            -- Puerto A: Lectura
-            acc_dout_a <= acc_ram(to_integer(acc_addr_a));
-
-            -- Puerto B: Escritura
-            if acc_we_b = '1' then
-                acc_ram(to_integer(acc_addr_b)) <= acc_din_b;
-            end if;
-        end if;
-    end process;
-
-    -- Proceso de Est铆mulos Principales
-    stimulus_proc : process
-    begin
-        -- Inicializaci贸n y Reset
-        rst   <= '1';
+        rst <= '1';
         start <= '0';
         wait for 40 ns;
         
         rst <= '0';
         wait for 20 ns;
+    
+        pos_addr <= to_unsigned(0, 7); pos_din <= to_unsigned(3, 15); pos_we <= '1'; wait for CLK_PERIOD;
+        pos_addr <= to_unsigned(1, 7); pos_din <= to_unsigned(35, 15); pos_we <= '1'; wait for CLK_PERIOD;
+        pos_addr <= to_unsigned(2, 7); pos_din <= to_unsigned(97, 15); pos_we <= '1'; wait for CLK_PERIOD;
+        pos_we <= '0';
 
-        -- Iniciar la multiplicaci贸n polinomial
-        report ">>> Iniciando prueba de multiplicacion polinomial (WT = 10, 128-bits)...";
+        dense_addr <= to_unsigned(0, 10); dense_din <= x"9009C00C"; dense_we <= '1'; wait for CLK_PERIOD;
+        dense_addr <= to_unsigned(1, 10); dense_din <= x"9009C00C"; dense_we <= '1'; wait for CLK_PERIOD;
+        dense_addr <= to_unsigned(2, 10); dense_din <= x"9009C00C"; dense_we <= '1'; wait for CLK_PERIOD;
+        dense_addr <= to_unsigned(3, 10); dense_din <= x"0000007F"; dense_we <= '1'; wait for CLK_PERIOD;
+        dense_we <= '0';
+        -- Iniciar la multiplicaci髇 directamente (los datos ya est醤 en la RAM)
+
         start <= '1';
         wait for CLK_PERIOD;
         start <= '0';
 
-        -- Esperar a que la se帽al 'done' se ponga en alto
         wait until rising_edge(done);
-        report ">>> Multiplicacion finalizada con exito por el modulo DUT.";
-
-        -- Mostrar algunos resultados de la memoria acumuladora
+        
         wait for 50 ns;
-        report "--- Resultados en la BRAM Acumuladora ---";
-        for i in 0 to WORD_COUNT_C + 2 loop
-            report "Acc_RAM[" & integer'image(i) & "] = 0x" & 
-                   to_hstring(std_logic_vector'(acc_ram(i)));
-        end loop;
-
-        -- Finalizar simulaci贸n
-        wait for 100 ns;
-        assert false report "Simulacion completada correctamente." severity failure;
+        assert false report "Fin de la simulaci髇" severity failure;
     end process;
 
 end architecture;
