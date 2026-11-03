@@ -1,0 +1,52 @@
+This is BibTeX, Version 0.99d (TeX Live 2022/dev/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: UVTemplateTesis.aux
+A level-1 auxiliary file: Varios/MisDatos.aux
+A level-1 auxiliary file: Varios/portada1.aux
+A level-1 auxiliary file: Varios/portada.aux
+A level-1 auxiliary file: Varios/Tabla_de_contenido.aux
+A level-1 auxiliary file: Contenido/Cap_0.aux
+A level-1 auxiliary file: Referencias/bibliografia.aux
+The style file: ieeetr.bst
+Database file #1: Referencias/references.bib
+You've used 8 entries,
+            1876 wiz_defined-function locations,
+            537 strings with 5314 characters,
+and the built_in function-call counts, 1381 in all, are:
+= -- 119
+> -- 69
+< -- 2
++ -- 27
+- -- 19
+* -- 100
+:= -- 225
+add.period$ -- 8
+call.type$ -- 8
+change.case$ -- 8
+chr.to.int$ -- 0
+cite$ -- 8
+duplicate$ -- 65
+empty$ -- 135
+format.name$ -- 19
+if$ -- 324
+int.to.chr$ -- 0
+int.to.str$ -- 8
+missing$ -- 3
+newline$ -- 27
+num.names$ -- 8
+pop$ -- 30
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 42
+stack$ -- 0
+substring$ -- 14
+swap$ -- 19
+text.length$ -- 2
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 0
+while$ -- 10
+width$ -- 9
+write$ -- 72

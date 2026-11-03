@@ -1,0 +1,470 @@
+\titleclass{\chapter}{straight}
+\pagestyle{plain} % No headers, just page numbers
+\pagenumbering{arabic} % Arabic numerals
+\setcounter{page}{1}
+
+%---------------------------------------------
+
+%---------------------------------------------
+
+
+\chapter*{FICHA RESUMEN}
+\addcontentsline{toc}{chapter}{FICHA RESUMEN}
+\input{Tablas/FichaResumen}
+
+\chapter*{INTRODUCCIÓN}
+\addcontentsline{toc}{chapter}{INTRODUCCIÓN}
+
+El desarrollo de la computación cuántica esta avanzando rápidamente y se ha convertido en uno de los mayores desafíos para los métodos de criptográfica convencionales comprometiendo la seguridad de toda la información. A diferencia de la computación clásica, los computadores cuánticos permiten ejecutar algoritmos que reducen drásticamente la complejidad de ciertos problemas matemáticos sobre los cuales se fundamentan los principales algoritmos criptográficos actuales, como RSA y ECC. En particular, el algoritmo de Shor permite la factorización de enteros y la resolución del logaritmo discreto en tiempo polinomial, anulando directamente la seguridad de estos algoritmos \cite{GidneyEkerå2021}. Esto ha motivado a la comunidad científica y en especial al Instituto Nacional de Estándares y Tecnología (NIST) a iniciar un proceso de estandarización de algoritmos resistentes a ataques cuánticos, bajo el campo emergente de la criptografía post-cuántica.
+
+En este contexto, el algoritmo Hamming Quasi-Cyclic (HQC) ha sido seleccionado por el NIST en su cuarta ronda de evaluación, como el quinto sistema criptográfico en ser estandarizado, específicamente como mecanismo para encapsulación de claves (KEM) en reemplazo de ML-KEM \cite{NISTIR8545_2025}. HQC es un algoritmo de clave pública estructurado en códigos de corrección de errores, basándose en la dificultad del problema de decodificación de síndromes en códigos quasi-cíclicos. A diferencia de los otros algoritmos ya seleccionados, HQC ofrece una estructura alternativa y eficiente, lo cual lo convierte en una poderosa opción tanto en términos de seguridad como de implementación.
+
+Sin embargo, el despliegue real de HQC en sistemas de transmisión de información dependerá en gran medida de si es viable o no su ejecución en hardware. La implementación eficiente de este algoritmo en plataformas reconfigurables como FPGAs, es clave para validar su integración en sistemas embebidos, dispositivos de red y protocolos de comunicación. En este orden de ideas, este proyecto tiene como objetivo desarrollar una arquitectura en hardware para HQC, siguiendo las especificaciones más recientes publicadas por el NIST. El diseño se enfocará en optimizar el rendimiento en términos de velocidad, consumo de recursos lógicos y eficiencia energética, utilizando descripciones RTL en VHDL, herramientas de síntesis como Quartus Prime y una plataforma FPGA Cyclone IV (DE2 - 115) para validación funcional y evaluación de rendimiento.
+
+Este trabajo no solo busca validar la implementación funcional del algoritmo HQC en hardware, sino también aportar a la investigación de soluciones criptográficas que logren enfrentar las amenazas de la era cuántica.
+
+
+
+
+%Plantamiento del problema
+\chapter{PLANTEAMIENTO DEL PROBLEMA} 
+
+\label{Cap:Planteamientodelproblema}
+El avance de las tecnologías de la información y la comunicación (TIC) ha transformado completamente la manera en la que los seres humanos nos comunicamos e intercambiamos información. Desde la unificación de las telecomunicaciones y las redes informáticas hasta el almacenamiento de datos y la implementación del internet de las cosas (IoT), la transmisión de información se ha convertido en una actividad fundamental en nuestro mundo moderno. A diario se transmiten grandes cantidades de datos, de los cuales muchos son de carácter sensible o privado. Con el fin de garantizar la confidencialidad, integridad y autenticidad de la información se utiliza la criptografía, la cual se encarga de desarrollar métodos de cifrado para modificar la representación de ciertos mensajes haciéndolos incomprensibles a receptores que no tengan la autorización para acceder a su contenido \cite{IBMQuantumSafe2024}.
+
+Los algoritmos criptográficos basados en problemas matemáticos complejos, como RSA (uso de clave publica), AES (cifrado simétrico) y ECC (criptografía de curva elíptica), han brindado un alto nivel de seguridad durante décadas. Sin embargo, el acelerado desarrollo de la computación cuántica a lo largo de los últimos años ha demostrado que algoritmos como el de Shor, puede romper RSA y ECC, y el algoritmo de Grover vulnera la seguridad del algoritmo AES a la mitad, limitándolo a ser usado en la era de la computación cuántica solo con una clave de 256-bit \cite{SinghSakk2024}. Esto nos deja como resultado un panorama donde la información encriptada bajo estos algoritmos está totalmente expuesta, lo que pondría en riesgo la seguridad de aplicaciones bancarias, redes gubernamentales, infraestructura crítica, etc.
+
+Adicionalmente, otro de los principales riesgos emergentes es la práctica conocida como Harvest Now, Decrypt Later (HNDL), que en español significa “recolectar ahora, desencriptar después”, la cual es una estrategia que se basa en la adquisición y almacenamiento a largo plazo de información actualmente cifrada con el objetivo de descifrarla en un futuro cuando se disponga de la suficiente potencia de cómputo cuántico \cite{Olutimehin2025FutureProofing}. Se estima que hay un alto número de actores maliciosos, especialmente atacantes de entes gubernamentales, que estarían robando datos cifrados muy sensibles con fines políticos y sociales.
+
+La aparición de este tipo de estrategias ha impulsado a la comunidad criptográfica a desarrollar con urgencia nuevos algoritmos de encriptación, lo cual ha dado origen a un nuevo estándar que reemplazará la criptografía de clave pública actual con la criptografía post-cuántica, termino con el que ha sido denominada la criptografía resistente a los ataques cuánticos. Este Proceso de estandarización se ha llevado a cabo por el Instituto Nacional de Estándares y Tecnología (NIST) con el fin de seleccionar los algoritmos que reemplacen los algoritmos tradicionales de seguridad para firma digital y cifrado e intercambio de claves \cite{CISA2022PreparePQC}.
+
+Dentro de estos esfuerzos, el algoritmo Hamming Quasi-Cyclic (HQC) fue seleccionado en la categoría Key Encapsulation Mechanism (KEM) como el quinto y último algoritmo en ser estandarizado hasta la fecha. En febrero de 2025 se publicó su última especificación, la cual introduce optimizaciones en eficiencia y seguridad \cite{HQCspec2025}. Este algoritmo servirá como respaldo de ML-KEM, uno de los algoritmos actuales para criptografía de clave pública dado que el HQC se basa en una matemática diferente a la de ML-KEM, lo cual podría ser importante en caso de que se descubriesen nuevas vulnerabilidades en dicho algoritmo. NIST planea publicar un borrador de estándar que incorpore el algoritmo HQC en el próximo año, y se espera que el estándar final esté listo para 2027 \cite{NIST2025SelectHQC}.
+
+Dado que la adopción de HQC en sistemas reales dependerá en gran medida de su viabilidad en entornos de hardware se plantea la siguiente pregunta problematizadora:
+
+\textbf{¿Cómo desarrollar una implementación eficiente en hardware del algoritmo HQC que optimice el rendimiento en términos de velocidad, consumo de recursos y consumo de potencia, superando las limitaciones de implementaciones previas basadas en síntesis de alto nivel (HLS)?}
+
+Para responder esta pregunta, este trabajo se centrará en la implementación en hardware de HQC, obedeciendo a las especificaciones más recientes del NIST (febrero de 2025) \cite{HQCspec2025}, con el objetivo de analizar su desempeño y explorar posibles optimizaciones para su implementación en sistemas embebidos y redes de transmisión de datos de alta seguridad.
+
+
+ \chapter{ANTECEDENTES} % Antecedentes
+En este apartado se presentan trabajos que proponen avances en la implementación del algoritmo de encapsulación de clave Hamming Quasi-Cyclic (HQC), con el objetivo de optimizar su ejecución en hardware y hacerlo viable para sistemas embebidos, FPGA y otros entornos de computación segura.
+
+Entre el contenido investigado referente al anteproyecto en cuestión, resultaron relevantes cuatro documentos en los que se proponen distintas arquitecturas de hardware eficientes para HQC. La búsqueda se enfocó en trabajos publicados a partir del año 2020, considerando el reciente proceso de estandarización del NIST y la evolución acelerada de las técnicas de diseño RTL.
+
+Cabe mencionar que, hasta la fecha, no se han identificado antecedentes documentados en el ámbito nacional que aborden la implementación en hardware reconfigurable o en procesadores dedicados del algoritmo criptográfico postcuántico HQC. Esto evidencia una oportunidad relevante para contribuir al desarrollo local en el área de ciberseguridad postcuántica y su implementación en hardware.
+
+\section{ANTECEDENTES INTERNACIONALES}
+“\textit{A High Efficiency Hardware Design for the Post-Quantum KEM HQC}” \cite{Wang2024HighEfficiency}. Presentan un diseño a nivel de transferencia de registro (RTL) altamente optimizado del algoritmo HQC KEM, plenamente compatible con la versión de especificación publicada en abril de 2023. Su propuesta mejora el rendimiento de los módulos más costosos —multiplicadores polinómicos y decodificadores Reed-Solomon/Muller, logrando aceleraciones de hasta 10.6× y reducciones importantes en el producto área-tiempo en comparación con las implementaciones previas en FPGA Artix-7.
+
+“\textit{An Efficient Hardware Design for Fast Implementation of HQC}” \cite{Li2023EfficientHQC}. En este documento se propone una arquitectura de hardware que reduce significativamente la latencia en operaciones clave como la multiplicación polinómica y el decodificado. Emplean un decodificador Reed-Solomon basado en el algoritmo ePIBM y un decodificador Reed-Muller optimizado con FHT, obteniendo mejoras del 25\% en el área‑tiempo y logrando una decapsulación en solo 0.38ms.
+
+“\textit{LTE: Lightweight and Time-Efficient Hardware Encoder for Post-Quantum Scheme HQC}” \cite{Tu2024LightweightEncoder}. En este trabajo se introduce una arquitectura ligera y eficiente en tiempo para el codificador de HQC. Su enfoque se centra en optimizar el flujo de datos entre los codificadores Reed-Solomon y Reed-Muller, así como en simplificar los multiplicadores en campos de Galois. Su implementación FPGA logra una reducción de hasta 35.2\% en el área‑tiempo (ADP) para los tres niveles de seguridad HQC: 128, 192 y 256.
+
+Finalmente, “\textit{An Efficient and Unified RTL Accelerator Design for HQC-128, HQC-192, and HQC-256}” \cite{Tu2023UnifiedRTL}, presenta un diseño unificado y flexible para HQC que soporta dinámicamente los tres niveles de seguridad del estándar (HQC-128, HQC-192 y HQC-256), mediante un solo acelerador RTL configurable en tiempo de ejecución. Este diseño ofrece mejoras significativas en tiempo de ejecución, hasta 3× respecto a implementaciones especializadas, y logra reducir el uso de LUTs y FFs mediante la reutilización inteligente de componentes como los codificadores y decodificadores RS/RM, todo esto sin comprometer la compatibilidad con la especificación oficial del algoritmo.
+
+Estos antecedentes validan que HQC no solo es robusto desde el punto de vista criptográfico, sino también eficiente y viable para ser implementado en hardware reconfigurable. Así, brindan una base sólida que respalda el desarrollo del criptoprocesador especializado en el mecanismo HQC con altos niveles de rendimiento y seguridad propuesto en este anteproyecto.
+
+
+
+%\section{FORMULACIÓN DEL PROBLEMA}
+
+
+\chapter{OBJETIVOS}
+
+\section{OBJETIVO GENERAL}
+
+\begin{itemize}
+    \item Desarrollar una implementación en hardware del algoritmo de encriptación postcuántica HQC, siguiendo las especificaciones de NIST, buscando optimizar su rendimiento en velocidad, uso de recursos y consumo de potencia.
+\end{itemize}
+
+\vspace{-1.6em}
+
+\section{OBJETIVOS ESPECÍFICOS}
+
+\begin{enumerate}
+    \item Implementar una versión funcional del algoritmo HQC en alto nivel utilizando Python, que facilite comprensión de las principales operaciones.
+
+    \item Diseñar los bloques funcionales del algoritmo de encriptación HQC.
+
+    \item Desarrollar la arquitectura hardware del algoritmo HQC utilizando VHDL, teniendo en cuenta consumo de recursos, velocidad, y consumo de potencia.
+
+    \item Realizar una evaluación comparativa del desempeño con otras implementaciones hardware reportadas, verificando tiempos de ejecución, consumo de recursos y consumo de potencia.
+
+\end{enumerate}
+
+\chapter{JUSTIFICACIÓN}
+
+Este proyecto se justifica por la necesidad urgente de desarrollar algoritmos de seguridad eficientes frente al avance de la computación cuántica. La reciente estandarización de HQC por parte del NIST refuerza su relevancia como algoritmo de respaldo en la futura infraestructura criptográfica global. Sin embargo, incluir este algoritmo en entornos reales requiere primero verificaciones de implementación en hardware, principalmente en dispositivos de bajo consumo y sistemas embebidos donde el software no es viable.
+
+En la actualidad, la mayoria de las investigaciones sobre HQC están centradas en contextos internacionales, sin que se evidencien desarrollos aplicados en el ámbito nacional, particularmente en arquitecturas digitales reconfigurables como FPGA. Este vacío representa una oportunidad estratégica para fortalecer las capacidades de la región en ciberseguridad postcuántica dado que este proyecto aborda un tema de frontera. Su impacto no solo radica en la generación de conocimiento técnico local, sino también en sentar bases para futuras aplicaciones en dispositivos de red, IoT, defensa y otros sectores que requieren seguridad resistente a las amenazas cuánticas que están por venir.
+
+
+
+\chapter{MARCO TEÓRICO}
+\section{La computación cuántica y su impacto en la criptografía}
+La computación cuántica representa un nuevo paradigma computacional basado en principios de la mecánica cuántica, como la superposición, el entrelazamiento y la interferencia. A diferencia de los bits clásicos que conocemos, que solo pueden tener dos estados, 0 o 1, los qubits (bits cuánticos) pueden representar ambos estados al mismo tiempo, lo que permite paralelismo masivo en ciertas operaciones computacionales.
+
+Este poder computacional pone en riesgo la seguridad de los algoritmos de cifrado actuales. Algoritmos como el de Shor, propuesto en 1994 por el ingeniero en computación Peter Shor Williston, permite factorizar números enteros muy grandes en tiempo polinomial, este procedimiento seria totalmente ineficiente de llevar a cabo mediante lógica clásica, sin embargo, cuando se usan circuitos cuánticos el tiempo en encontrar la respuesta se vuelve significativamente inferior. Como todos los algoritmos de computación cuántica, el algoritmo de Shor es probabilístico, es decir que da la respuesta correcta con alta probabilidad y la probabilidad de fallo puede ser disminuida repitiendo el algoritmo. Muchos sistemas criptográficos de clave pública, tales como RSA y ECC, quedarían completamente obsoletos si el algoritmo de Shor es implementado alguna vez en una computadora cuántica práctica. Incluso con dispositivos cuánticos de tamaño limitado, ya se han demostrado ejecuciones de Shor sobre curvas elípticas y RSA de pocas bits. La amenaza se extiende también al enfoque de harvest now, decrypt later, donde datos cifrados hoy podrían ser almacenados y descifrados en el futuro una vez que los computadores cuánticos maduren \cite{Olutimehin2025FutureProofing}.
+
+\section{Criptografía postcuántica}
+La criptografía postcuántica (PQC) agrupa algoritmos diseñados para resistir ataques tanto de computadores clásicos como cuánticos. Estos algoritmos no dependen de los problemas matemáticos clásicos, sino de problemas computacionales difíciles incluso para la lógica cuántica.
+
+Los sistemas criptográficos postcuánticos existentes hasta el momento se pueden clasificar en 4 categorías:
+
+\begin{itemize}
+    \item Basados en lattices (como Kyber, Dilithium).
+    \item Basados en códigos (como Classic McEliece y HQC).
+    \item Basados en funciones hash (como SPHINCS+).
+    \item Basados en isogenias.
+\end{itemize}
+
+El NIST, en su proceso de estandarización PQC iniciado en 2016, seleccionó a HQC como uno de los cinco algoritmos finales recomendados, específicamente como mecanismo de encapsulacion de clave (KEM) de respaldo para ML-KEM. Esto refuerza la importancia de investigar su implementación y aplicabilidad \cite{NIST_SelectedPQCAlgorithms}.
+
+Los cinco algoritmos actualmente estandarizados por el NIST son los siguientes:
+
+\begin{itemize}
+    \item [1] CRYSTALS-KYBER (2022), algoritmo para encriptación general basado en lattices modulares.
+    \item [2] CRYSTALS-DILITHIUM (2022), algoritmo para protección de firma digital basado en lattices modulares.
+    \item [3] FALCON (2022), algoritmo para firma digital basado en lattices rápidos de fourier.
+    \item [4] SPHINCS+  (2022), algoritmo para firma digital basado en funciones hash.
+    \item [5] Hamming Quasi-Cyclic (HQC), algoritmo para encapsulación de clave basado en códigos de corrección de errores.
+\end{itemize}
+
+\section{El algoritmo Hamming Quasi-Cyclic (HQC)}
+HQC es un algoritmo para encapsulación de claves (KEM) basado en códigos de corrección de errores cuasi-cíclicos, donde fortaleza del algoritmo radica en la dificultad del Síndrome Decoding Problem (SDP) para códigos binarios.
+
+El esquema HQC–KEM se construye a partir de HQC–PKE, reutilizando sus funciones de generación de claves, cifrado y descifrado. 
+Mientras HQC–PKE define un sistema de cifrado público, HQC–KEM lo transforma en un mecanismo de encapsulación de claves, 
+añadiendo funciones de hash y derivación de claves (KDF) para lograr seguridad frente a ataques adaptativos (IND–CCA2).
+
+\subsection{HQC-PKE}
+
+\subsubsection{Generación de claves}
+A partir de una semilla inicial se generan dos vectores secretos $\mathbf{x}$ y $\mathbf{y}$ de peso fijo, y un vector público $\mathbf{h}$. Con ellos se calcula $\mathbf{s} = \mathbf{x} + \mathbf{h}\cdot\mathbf{y}$, formando así la clave pública $(\textit{seed}_{PKE.ek}, \mathbf{s})$ y la clave privada $\textit{seed}_{PKE.dk}$.
+
+% ==== Estilo del recuadro ====
+\tcbset{
+  hqcbox/.style={
+    colback=white,
+    colframe=black,
+    boxrule=0.4pt,
+    arc=1pt,
+    outer arc=1pt,
+    fonttitle=\normalsize\rmfamily,
+    left=4pt,right=4pt,top=4pt,bottom=4pt,
+  }
+}
+
+% ==== Comando para líneas descriptivas tipo HQC ====
+\newcommand{\triComment}[1]{\Statex $\triangleright$ \textit{#1}}
+
+% ================================================================
+% ------------------- HQC–PKE.KeyGen -------------------
+% ================================================================
+\begin{tcolorbox}[hqcbox,title=\textbf{Algoritmo HQC–PKE.KeyGen}]
+\begin{algorithmic}[1]
+\Require Semilla $\textit{seed}_{PKE}$
+\Ensure Clave pública $\textit{ek}_{PKE}$, clave privada $\textit{dk}_{PKE}$
+
+\triComment{Generar dos subsemillas aleatorias para cifrado y descifrado}
+\State $(\textit{seed}_{PKE.dk}, \textit{seed}_{PKE.ek}) \gets I(\textit{seed}_{PKE})$
+
+\triComment{Generar los vectores $\mathbf{x}$ y $\mathbf{y}$ con peso Hamming fijo $\omega$}
+\State $\textit{ctx}_{PKE.dk} \gets \text{XOF.Init}(\textit{seed}_{PKE.dk})$
+\State $(\textit{ctx}_{PKE.dk}, \mathbf{y}) \gets \text{SampleFixedWeightVect\$}(\textit{ctx}_{PKE.dk}, R_\omega)$
+\State $(\textit{ctx}_{PKE.dk}, \mathbf{x}) \gets \text{SampleFixedWeightVect\$}(\textit{ctx}_{PKE.dk}, R_\omega)$
+\State $\textit{dk}_{PKE} \gets \textit{seed}_{PKE.dk}$
+
+\triComment{Generar el parámetro público $\mathbf{h}$}
+\State $\textit{ctx}_{PKE.ek} \gets \text{XOF.Init}(\textit{seed}_{PKE.ek})$
+\State $(\textit{ctx}_{PKE.ek}, \mathbf{h}) \gets \text{SampleVect}(\textit{ctx}_{PKE.ek}, R)$
+
+\triComment{Calcular $\mathbf{s} = \mathbf{x} + \mathbf{h}\cdot\mathbf{y}$}
+\State $\mathbf{s} \gets \mathbf{x} + \mathbf{h}\cdot\mathbf{y}$
+
+\triComment{Formar las claves pública y privada}
+\State $\textit{ek}_{PKE} \gets (\textit{seed}_{PKE.ek}, \mathbf{s})$
+\State \Return $(\textit{ek}_{PKE}, \textit{dk}_{PKE})$
+\end{algorithmic}
+\end{tcolorbox}
+
+\subsubsection{Cifrado}
+El emisor usa la clave pública y una semilla aleatoria para generar los vectores $\mathbf{r}_1$, $\mathbf{r}_2$ y $\mathbf{e}$. Luego calcula $\mathbf{u}$ y $\mathbf{v}$, donde el mensaje se mezcla con un error controlado, produciendo el texto cifrado $\mathbf{c}_{PKE} = (\mathbf{u}, \mathbf{v})$.
+
+% ================================================================
+% ------------------- HQC–PKE.Encrypt -------------------
+% ================================================================
+\begin{tcolorbox}[hqcbox,title=\textbf{Algoritmo HQC–PKE.Encrypt}]
+\begin{algorithmic}[1]
+\Require Clave pública $\textit{ek}_{PKE}$, mensaje $\mathbf{m}$, aleatoriedad $\theta$
+\Ensure Texto cifrado $\mathbf{c}_{PKE}$
+
+\triComment{Interpretar la clave pública $\textit{ek}_{PKE}$}
+\State $\textit{seed}_{PKE.ek} \gets \textit{ek}_{PKE}[0{:}|\textit{seed}|]$
+\State $\textit{ctx}_{PKE.ek} \gets \text{XOF.Init}(\textit{seed}_{PKE.ek})$
+\State $(\textit{ctx}_{PKE.ek}, \mathbf{h}) \gets \text{SampleVect}(\textit{ctx}_{PKE.ek}, R)$
+\State $\mathbf{s} \gets \textit{ek}_{PKE}[|\textit{seed}|{:}|\textit{seed}|+|\mathbf{s}|]$
+
+\triComment{Generar los vectores aleatorios $\mathbf{r}_1$, $\mathbf{r}_2$ y $\mathbf{e}$ con pesos fijos}
+\State $\textit{ctx}_\theta \gets \text{XOF.Init}(\theta)$
+\State $(\textit{ctx}_\theta, \mathbf{r}_2) \gets \text{SampleFixedWeightVect}(\textit{ctx}_\theta, R_{\omega_r})$
+\State $(\textit{ctx}_\theta, \mathbf{e})  \gets \text{SampleFixedWeightVect}(\textit{ctx}_\theta, R_{\omega_e})$
+\State $(\textit{ctx}_\theta, \mathbf{r}_1) \gets \text{SampleFixedWeightVect}(\textit{ctx}_\theta, R_{\omega_r})$
+
+\triComment{Calcular $\mathbf{u} = \mathbf{r}_1 + \mathbf{h}\cdot\mathbf{r}_2$}
+\State $\mathbf{u} \gets \mathbf{r}_1 + \mathbf{h}\cdot\mathbf{r}_2$
+
+\triComment{Codificar el mensaje $\mathbf{m}$ y calcular $\mathbf{v} = C.\text{Encode}(\mathbf{m}) + \text{Truncate}(\mathbf{s}\cdot\mathbf{r}_2 + \mathbf{e}, \ell)$}
+\State $\mathbf{v} \gets C.\text{Encode}(\mathbf{m}) + \text{Truncate}(\mathbf{s}\cdot\mathbf{r}_2 + \mathbf{e}, \ell)$
+
+\triComment{Formar el texto cifrado $\mathbf{c}_{PKE} = (\mathbf{u}, \mathbf{v})$}
+\State $\mathbf{c}_{PKE} \gets (\mathbf{u}, \mathbf{v})$
+\State \Return $\mathbf{c}_{PKE}$
+\end{algorithmic}
+\end{tcolorbox}
+
+\subsubsection{Descifrado}
+El receptor reconstruye el vector secreto $\mathbf{y}$ a partir de su clave privada y usa $\mathbf{u}$ y $\mathbf{v}$ para eliminar el error y recuperar el mensaje original mediante el decodificador del código $C$.
+
+% ================================================================
+% ------------------- HQC–PKE.Decrypt -------------------
+% ================================================================
+\begin{tcolorbox}[hqcbox,title=\textbf{Algoritmo HQC–PKE.Decrypt}]
+\begin{algorithmic}[1]
+\Require Clave privada $\textit{dk}_{PKE}$, texto cifrado $\mathbf{c}_{PKE}$
+\Ensure Mensaje $\mathbf{m}$
+
+\triComment{Interpretar la clave privada $\textit{dk}_{PKE}$}
+\State $\textit{seed}_{PKE.dk} \gets \textit{dk}_{PKE}[0{:}|\textit{seed}|]$
+\State $\textit{ctx}_{PKE.dk} \gets \text{XOF.Init}(\textit{seed}_{PKE.dk})$
+\State $(\textit{ctx}_{PKE.dk}, \mathbf{y}) \gets \text{SampleFixedWeightVect\$}(\textit{ctx}_{PKE.dk}, R_\omega)$
+
+\triComment{Interpretar el texto cifrado $\mathbf{c}_{PKE}$}
+\State Analizar $\mathbf{c}_{PKE}$ como $(\mathbf{u}, \mathbf{v})$
+
+\triComment{Calcular $\mathbf{v}' = \mathbf{v} - \text{Truncate}(\mathbf{u}\cdot\mathbf{y}, \ell)$}
+\triComment{Decodificar $\mathbf{v}'$ usando el decodificador RMRS para recuperar $\mathbf{m}$}
+\State $\mathbf{m} \gets C.\text{Decode}(\mathbf{v} - \text{Truncate}(\mathbf{u}\cdot\mathbf{y}, \ell))$
+
+\triComment{Devolver el mensaje decodificado}
+\State \Return $\mathbf{m}$
+\end{algorithmic}
+\end{tcolorbox}
+
+\subsection{HQC-KEM}
+
+\subsubsection{Generación de claves}
+Se generan vectores secretos y se calcula un síndrome
+
+% ==== Comando para líneas descriptivas tipo HQC ====
+\newcommand{\triComment}[1]{\Statex $\triangleright$ \textit{#1}}
+
+% ================================================================
+% ------------------- HQC–KEM.KeyGen -------------------
+% ================================================================
+\begin{tcolorbox}[hqcbox,title=\textbf{Algoritmo HQC–KEM.KeyGen}]
+\begin{algorithmic}[1]
+\Require Semilla $\textit{seed}_{KEM}$
+\Ensure Clave pública $\textit{ek}_{KEM}$, clave privada $\textit{dk}_{KEM}$
+
+\triComment{Ejecutar HQC–PKE.KeyGen para generar las claves base}
+\State $(\textit{ek}_{PKE}, \textit{dk}_{PKE}) \gets \text{HQC–PKE.KeyGen}(\textit{seed}_{KEM})$
+
+\triComment{Ampliar la clave privada con la clave pública y el hash de ésta}
+\State $\textit{hpk} \gets H(\textit{ek}_{PKE})$
+\State $\textit{dk}_{KEM} \gets (\textit{dk}_{PKE}, \textit{ek}_{PKE}, \textit{hpk})$
+
+\triComment{Asignar las claves de salida}
+\State $\textit{ek}_{KEM} \gets \textit{ek}_{PKE}$
+\State \Return $(\textit{ek}_{KEM}, \textit{dk}_{KEM})$
+\end{algorithmic}
+\end{tcolorbox}
+
+\subsubsection{Encapsulación}
+El mensaje es codificado junto con un error, y luego cifrado usando el síndrome público
+
+% ================================================================
+% ------------------- HQC–KEM.Encaps -------------------
+% ================================================================
+\begin{tcolorbox}[hqcbox,title=\textbf{Algoritmo HQC–KEM.Encaps}]
+\begin{algorithmic}[1]
+\Require Clave pública $\textit{ek}_{KEM}$
+\Ensure Clave compartida $K$, texto cifrado $\mathbf{c}_{KEM}$
+
+\triComment{Generar una semilla aleatoria y un mensaje temporal}
+\State $\mathbf{m} \gets \text{RandomBytes}(K_\text{len})$
+\State $\theta \gets G(\mathbf{m} \,\|\, H(\textit{ek}_{KEM}))$
+    \Comment{Derivar aleatoriedad a partir del mensaje y la clave pública}
+
+\triComment{Cifrar el mensaje con HQC–PKE.Encrypt}
+\State $\mathbf{c}_{PKE} \gets \text{HQC–PKE.Encrypt}(\textit{ek}_{KEM}, \mathbf{m}, \theta)$
+
+\triComment{Construir el ciphertext extendido añadiendo el hash del mensaje}
+\State $\mathbf{c}_{KEM} \gets (\mathbf{c}_{PKE}, H(\mathbf{m}))$
+
+\triComment{Derivar la clave compartida a partir del mensaje y del ciphertext}
+\State $K \gets KDF(\mathbf{m} \,\|\, \mathbf{c}_{KEM})$
+
+\State \Return $(K, \mathbf{c}_{KEM})$
+\end{algorithmic}
+\end{tcolorbox}
+
+\subsubsection{Desencapsulación}
+El receptor usa su clave privada para decodificar el error y recuperar la semilla secreta compartida.
+
+% ================================================================
+% ------------------- HQC–KEM.Decaps -------------------
+% ================================================================
+\begin{tcolorbox}[hqcbox,title=\textbf{Algoritmo HQC–KEM.Decaps}]
+\begin{algorithmic}[1]
+\Require Clave privada $\textit{dk}_{KEM}$, texto cifrado $\mathbf{c}_{KEM}$
+\Ensure Clave compartida $K$
+
+\triComment{Separar la clave privada en sus componentes}
+\State Parse $\textit{dk}_{KEM}$ como $(\textit{dk}_{PKE}, \textit{ek}_{PKE}, \textit{hpk})$
+
+\triComment{Separar el texto cifrado}
+\State Parse $\mathbf{c}_{KEM}$ como $(\mathbf{c}_{PKE}, \textit{d})$
+
+\triComment{Descifrar el mensaje usando HQC–PKE.Decrypt}
+\State $\mathbf{m}' \gets \text{HQC–PKE.Decrypt}(\textit{dk}_{PKE}, \mathbf{c}_{PKE})$
+
+\triComment{Recalcular la aleatoriedad a partir de $\mathbf{m}'$ y de la clave pública}
+\State $\theta' \gets G(\mathbf{m}' \,\|\, \textit{hpk})$
+
+\triComment{Recalcular el ciphertext y verificar coherencia}
+\State $\mathbf{c}'_{PKE} \gets \text{HQC–PKE.Encrypt}(\textit{ek}_{PKE}, \mathbf{m}', \theta')$
+\State $\mathbf{c}'_{KEM} \gets (\mathbf{c}'_{PKE}, H(\mathbf{m}'))$
+
+\triComment{Verificar si el ciphertext recibido es válido}
+\If{$\mathbf{c}'_{KEM} = \mathbf{c}_{KEM}$}
+    \triComment{El descifrado fue correcto, usar la clave derivada de $\mathbf{m}'$}
+    \State $K \gets KDF(\mathbf{m}' \,\|\, \mathbf{c}_{KEM})$
+\Else
+    \triComment{El descifrado falló, usar clave aleatoria oculta}
+    \State $\mathbf{m}'' \gets \text{RandomBytes}(K_\text{len})$
+    \State $K \gets KDF(\mathbf{m}'' \,\|\, \mathbf{c}_{KEM})$
+\EndIf
+
+\triComment{Devolver la clave compartida}
+\State \Return $K$
+\end{algorithmic}
+\end{tcolorbox}
+
+
+Su diseño favorece la implementación eficiente en hardware gracias a su estructura cuasi-cíclica, es decir, que se comporta de manera similar a un código cíclico, pero con una restricciones adicionales, permitiendo reutilización de recursos.
+
+\begin{comment}
+\section{Arquitecturas Digitales y FPGA}
+Una FPGA (Field Programmable Gate Array) es un dispositivo reconfigurable que permite implementar circuitos digitales específicos mediante lógica programable. Se componen de bloques lógicos (LUTs), registros, bloques de memoria, y una red de interconexión totalmente configurable.
+
+Son ampliamente utilizadas en aplicaciones de:
+\begin{itemize}
+    \item Prototipado rápido y pruebas de concepto.
+    \item Sistemas embebidos, donde se requiere bajo consumo y alta velocidad.
+    \item Criptografía, por su capacidad de paralelismo y control de temporización.
+\end{itemize}
+
+Para la implementación del algoritmo HQC, se selecciona la FPGA Cyclone IV sobre la plataforma DE2-115, esta tarjeta es compatible con herramientas como Quartus Prime y SignalTap para depuración en tiempo real. La descripción del diseño se realiza en VHDL, lenguaje orientado a la síntesis de hardware.
+
+Implementar HQC en FPGA requiere dividir el algoritmo en módulos funcionales como:
+\begin{itemize}
+    \item Multiplicadores polinómicos binarios.
+    \item Codificadores/decodificadores binarios.
+    \item Módulos de generación de error.
+    \item Módulos de control y sincronización (FSMs).
+\end{itemize}
+
+Se busca lograr eficiencia en área, tiempo de ejecución y consumo, mediante técnicas como la reutilización de bloques, el paralelismo estructural y técnicas como clock gating (optimización de reloj en bloques funcionales) para reducir consumo de recursos lógicos y energéticos.
+\end{comment}
+
+\section{Estado del Arte en Implementación de HQC en Hardware}
+Varios trabajos recientes han explorado el diseño de aceleradores para HQC, estos trabajos se trataron en el apartado de antecedentes.
+
+Sin embargo, a nivel de Colombia no se registran antecedentes académicos o técnicos en repositorios públicos que documenten la implementación de HQC en hardware. Esto revela un vacío de conocimiento y la oportunidad de realizar aportes locales en el campo de la criptografía postcuántica desde la ingeniería electrónica.
+
+\chapter{METODOLOGÍA}
+La metodología adoptada para el desarrollo de este anteproyecto se estructura en cuatro fases principales, intencionalmente alineadas con los objetivos específicos que se plantearon. Estas fases permiten abordar el proceso del desarrollo del algoritmo en hardware, desde la comprensión funcional de HQC hasta su validación en una plataforma FPGA, garantizando una implementación verificable y documentable que pueda compararse con desarrollos previos.
+
+\subsection*{ACTIVIDADES}
+
+\begin{enumerate}
+  \item \textbf{Comprensión y modelado del algoritmo HQC}
+    \begin{enumerate}[label*=\arabic*.]
+      \item Analizar la versión más actual del documento oficial para identificar el flujo general del algoritmo, estructura de datos, codificadores y operaciones criptográficas involucradas. 
+      \item Descomponer el algoritmo HQC en etapas clave: generación de claves, codificación, encapsulación y desencapsulación.
+      \item Implementar cada uno de los bloques del algoritmo HQC en Python, respetando las operaciones indicadas en la especificación.
+      \item Ejecutar el modelo funcional con datos de prueba, observando el comportamiento de cada módulo para validar la correcta ejecución del modelo funcional comparando sus resultados con los vectores de prueba provistos por el NIST (test vectors oficiales).
+      \item Documentar el comportamiento esperado de cada módulo y las interfaces entre bloques para su posterior traducción al diseño hardware.
+    \end{enumerate}
+    
+  \item \textbf{Identificación de bloques funcionales del sistema de encriptación HQC}
+    \begin{enumerate}[label*=\arabic*.]
+      \item Estudiar la secuencia de procesos criptográficos del algoritmo para identificar la interacción entre módulos y el orden lógico de ejecución.
+      \item Representar gráficamente el flujo de datos entre los bloques, identificando buses, registros intermedios y rutas de comunicación.
+      \item Proponer un modelo de control basado en una máquina de estados finita FSM que estructure la activación secuencial y paralela de los bloques funcionales.
+      \item Verificar que el diseño del datapath y controlpath permita una arquitectura escalable, reutilizable y adecuada para su futura implementación en VHDL.
+      \item Consolidar la información en diagramas estructurales y tablas descriptivas a modo de documentación, sirviendo como base para el desarrollo RTL en la siguiente fase.
+      
+    \end{enumerate}
+
+
+
+  \item \textbf{Síntesis del diseño VHDL del algoritmo en FPGA}
+   \begin{enumerate}[label*=\arabic*.]
+     \item Utilizar la placa de desarrollo DE2-115 con FPGA Cyclone IV de Intel, configurando el proyecto en el entorno Quartus Prime, incluyendo la configuración del dispositivo, asignación de pines, y definición de la arquitectura general del sistema.
+     \item Codificar en VHDL cada uno de los bloques identificados previamente (generador de claves, codificadores RS y RM, multiplicadores, encapsulador y descapsulador), garantizando modularidad y compatibilidad entre interfaces.
+     \item Incorporar estrategias como la reutilización de bloques funcionales comunes, paralelización de operaciones críticas, por ejemplo, en multiplicadores polinómicos y la reducción del consumo dinámico mediante técnicas como el \textit{clock gating}.
+     \item Ejecutar el proceso de síntesis para traducir el diseño lógico en una estructura implementable en hardware.
+     \item Verificación mediante SignalTap (Intel/Altera) para observar en tiempo real el comportamiento del algoritmo durante la ejecución de pruebas permitiendo documentar la correcta secuenciación de señales internas en condiciones operativas reales.
+  \end{enumerate}
+
+
+  \item \textbf{Evaluación de desempeño y comparación con diseños previos}
+    \begin{enumerate}[label*=\arabic*.]
+      \item Obtener indicadores como el tiempo de ejecución en la encapsulación y desencapsulación, el consumo de recursos lógicos (LUTs, flip-flops, BRAMs), el consumo de potencia estimado mediante PowerPlay power analizer de Intel Quartus.
+      \item Contrastar los resultados obtenidos con los trabajos analizados en la sección de antecedentes, evaluando mejoras o desventajas en rendimiento, área-tiempo y eficiencia energética.
+      \item Confirmar que el diseño final cumple con los requerimientos funcionales y de seguridad definidos por el NIST.
+      \item Registrar los datos obtenidos en cuadros comparativos y gráficas, acompañados de una discusión técnica que justifique la efectividad y aplicabilidad del diseño propuesto.
+    \end{enumerate}
+\end{enumerate}
+
+
+\chapter{CRONOGRAMA}
+El cronograma del proyecto se ha organizado de forma secuencial, siguiendo las fases principales: modelado funcional, diseño estructural, implementación en FPGA y evaluación de resultados. Las actividades de síntesis e implementación en VHDL requerirán mayor tiempo debido a la complejidad del diseño, la integración de módulos y la necesidad de validación en tiempo real. De igual manera, la etapa inicial de modelado en Python demanda atención especial, ya que sienta las bases funcionales del algoritmo. EL ultimo objetivo, que corresponde al análisis estructural y la evaluación comparativa, dependerá del avance de las anteriores y tendrá una carga de trabajo más reducida.
+
+El siguiente esquema resume y estima la duración en semanas de cada objetivo especifico con el fin de mantener un control temporal sobre las actividades a desarrollar y así consolidar todos y cada uno de ellos.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{CronogramaHQC.png}
+    \caption{Cronograma de actividades}
+    \label{fig:placeholder}
+\end{figure}
+
+
+
+
+\chapter{PRESUPUESTO}
+
+A continuación se presenta el presupuesto estimado para la ejecución del proyecto, considerando los recursos necesarios para llevar a cabo las actividades definidas en el cronograma. Se incluyen costos asociados a recursos humanos, herramientas de desarrollo, software y material bibliográfico. Los criterios para estructurar este presupuesto se realizaron teniendo en cuenta la disponibilidad institucional y necesidades específicas del diseño e implementación del algoritmo en una plataforma FPGA.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{Figuras/presupuestoHQC.png}
+    \caption{Presupuesto general}
+\end{figure}
+
+\centering
+
+
+%\input{Tablas/Presupuesto/General}
+
+
+%\input{Tablas/Presupuesto/RecursosHumanos}
+
+
+
+%\input{Tablas/Presupuesto/OtrosGastos}
+

@@ -1,0 +1,43 @@
+\begin{thebibliography}{1}
+
+\bibitem{GidneyEkera2021}
+C.~Gidney and M.~Ekerå, ``How to factor 2048 bit rsa integers in 8 hours using
+  20 million noisy qubits,'' {\em Quantum}, vol.~5, p.~433, 2021.
+
+\bibitem{NISTIR8545_2025}
+{National Institute of Standards and Technology (NIST)}, ``{Status Report on
+  the Fourth Round of the NIST Post‑Quantum Cryptography Standardization
+  Process},'' Internal Report (NISTIR) 8545, NIST, March 2025.
+
+\bibitem{IBMQuantumSafe2024}
+{IBM}, ``What is quantum-safe cryptography?.''
+  \url{https://www.ibm.com/think/topics/quantum-safe-cryptography}, September
+  2024.
+
+\bibitem{SinghSakk2024}
+S.~Singh and E.~Sakk, ``Implementation and analysis of shor’s algorithm to
+  break rsa cryptosystem security,'' {\em TechRxiv}, January 2024.
+
+\bibitem{Olutimehin2025FutureProofing}
+A.~T. Olutimehin, S.~Joseph, O.~C. Metibemu, A.~Y. Balogun, O.~O. Olaniyi, and
+  A.~O. Olayemi, ``Future-proofing data: Assessing the feasibility of
+  post-quantum cryptographic algorithms to mitigate ‘harvest now, decrypt
+  later’ attacks,'' {\em Archives of Current Research International},
+  vol.~25, p.~1098, February 2025.
+
+\bibitem{CISA2022PreparePQC}
+{Cybersecurity and Infrastructure Security Agency (CISA)}, ``Prepare for a new
+  cryptographic standard to protect against future quantum-based threats.''
+  CISA, July 2022.
+
+\bibitem{HQCspec2025}
+Y.~Laigle-Chapuy, O.~Blazy, P.~Gaborit, A.~Hauteville, and J.-P. Tillich,
+  ``Hqc: Ind-cca2 kem based on quasi-cyclic codes, specification v1.1,'' Tech.
+  Rep. NIST PQC Submission Document, National Institute of Standards and
+  Technology (NIST), February 2025.
+
+\bibitem{NIST2025SelectHQC}
+{National Institute of Standards and Technology}, ``Nist selects hqc as fifth
+  algorithm for post-quantum encryption.'' NIST News, March 2025.
+
+\end{thebibliography}

@@ -1,0 +1,23 @@
+# ==========================================
+# Archivos del Sistema Operativo
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Entornos de Simulación y Hardware (EDA)
+# ==========================================
+# ModelSim / Questa
+work/
+transcript
+*.wlf
+
+# ==========================================
+# Imágenes (PNG, JPG y variantes)
+# ==========================================
+*.png
+*.jpg
+*.jpeg
+*.JPG
+*.PNG

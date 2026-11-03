@@ -1,0 +1,26 @@
+
+\clearpage
+\pagebreak{}
+\phantomsection
+%\addcontentsline{toc}{chapter}{TABLA DE CONTENIDO}  
+
+\begin{singlespace}
+\renewcommand\contentsname{\normalfont} {\centerline{\b TABLA DE CONTENIDO}}
+
+
+\setcounter{tocdepth}{1} % This puts \subsubsection[]{×} in your List of Tables.  The default is 3.
+
+
+%%%%%%%%%%%%%  Adds Page above the page number in TOC
+\setlength{\cftaftertoctitleskip}{1em}
+\renewcommand{\cftaftertoctitle}{%
+\hfill{\normalfont {Pag.}\par}}
+
+
+\tableofcontents
+\thispagestyle{empty}
+
+%\addtocontents{toc}{\protect\afterpage{~\hfill\normalfont{Page}\par\medskip}}
+\end{singlespace}
+
+\pagebreak{}

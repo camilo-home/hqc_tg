@@ -1,0 +1,292 @@
+\usepackage[acronym]{glossaries}
+\makeglossaries
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Liste aquí la nomenclatura de su documento
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newacronym{OT}{OT}{Tecnologías de la Operación}
+\newacronym{iiot}{IIoT}{Industrial Internet of Things}
+\newacronym{SG}{SG}{Smart Grid}
+\newacronym{IT}{IT}{Tecnologías de la Información}
+\newacronym{SEP}{SEP}{Sistema Eléctrico de Potencia}
+\newacronym{ICS}{ICS}{Sistemas de Control Industrial}
+\newacronym{SIN}{SIN}{Sistema Interconectado Nacional}
+\newacronym{ZNI}{ZNI}{Zonas No Interconectadas}
+\newacronym{CND}{CND}{Centro Nacional de Despacho}
+\newacronym {NIST}{NIST} {Instituto Nacional de Estándares y Tecnología de Estados Unidos}
+\newacronym {cci}{CCI} {Centro de Ciberseguridad Industrial}
+\newacronym {cigre}{CIGRE} {Consejo Internacional de Grandes Redes Eléctricas}
+\newacronym {epm}{EPM} {Empresas Públicas de Medellín}
+\newacronym {cno}{CNO} {Consejo Nacional de Operación}
+\newacronym{cim}{CIM}{Common Information Model}
+\newacronym {upme}{UPME} {Unidad de Planeación Minero Energética}
+\newacronym{EPRI}{EPRI}{Electric Power Research Institute}
+\newacronym{ETP SG}{ETP SG}{Smart Grid European Technology Platform}
+\newacronym{ada}{ADA}{Advanced Distribution Automation}
+\newacronym {MME}{MME} {Ministerio de Minas y Energía}
+\newacronym {CREG}{CREG} {Comisión de Regulación de Energía y Gas}
+\newacronym {NERC}{NERC} {Corporación Norteamericana de Confiabilidad Eléctrica}
+\newacronym {NERC-CIP}{NERC-CIP} {Protección de Infraestructuras Críticas}
+\newacronym {iec}{IEC} {International Electrotechnical Commission}
+\newacronym {iso}{ISO} {International Organization for Standardization}
+\newacronym {OR}{OR} {Operadores de red}
+\newacronym {IP}{IP} {Internet Protocol}
+\newacronym {TIC}{TIC} {Tecnologías de la Información y la Comunicación}
+\newacronym {SCADA}{SCADA} {Sistemas de Control y Adquisición de Datos}
+\newacronym {HMI}{HMI} {Interfaz Humano-Computadora}
+\newacronym {PLC}{PLC} {Programmable Logic Controller}
+\newacronym {CIA}{CIA} {Confidentiality, Integrity y Availability}
+%\newacronym {DoS}{DoS} {Denial of Service}
+\newacronym {DDoS}{DDoS} {Distributed Denial of Service}
+\newacronym {RTU}{RTU} {Remote Terminal Unit}
+\newacronym {PMU}{PMU} {Phasor Measurement Unit}
+\newacronym {ids}{IDS} {Intrusion Detection System}
+\newacronym {edr}{EDR} {Endpoint Detection \& Response}
+\newacronym {GPS}{GPS} {Global Positioning System}
+\newacronym {lan}{LAN} {Local Area Network}
+\newacronym{arp}{ARP}{Address Resolution Protocol}
+\newacronym{mac}{MAC}{Medium Access Control}
+\newacronym{ied}{IED}{Intelligent Electronic Device}
+\newacronym{ami}{AMI}{Advanced Metering Infraestructure}
+\newacronym{ttps}{TTPs}{Tácticas, Técnicas, y Procedimientos}
+%\newacronym{cta}{CTA}{Cyber Threat Actors (\gls{actores})}
+\newacronym{tls}{TLS}{Transport Layer Security}
+\newacronym{osint}{OSINT}{Open-source Intelligence}
+\newacronym{der}{DER}{Distributed Energy Resource}
+\newacronym{uml}{UML}{Unified Modeling Language}
+\newacronym{xml}{XML}{Extensible Markup Language}
+\newacronym{sgam}{SGAM}{Smart Grid Architectural Model}
+\newacronym{csirt}{CSIRT}{Computer Security Incident Response Team}
+\newacronym{cert}{CERT}{Computer Emergency Response Team}
+\newacronym{ccoci}{CCOCI}{Comando Conjunto Cibernético}
+\newacronym{colcert}{COLCERT}{Grupo de Respuesta a Emergencias Cibernéticas de Colombia}
+\newacronym{ccp}{CCP}{Centro Cibernético Policial}
+\newacronym{mintic}{MinTIC}{Ministerio de Tecnologías de la Información y las Comunicaciones}
+\newacronym{itu}{ITU}{International Telecommunication Union}
+\newacronym{arem}{AREM}{Amenazas y Riesgos Emergentes}
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Liste aquí el glosario de su documento
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%https://www.iso.org/obp/ui/#iso:std:iso-iec:27000:ed-5:v1:en - [\cite{isoiec27000}]
+
+%% https://www.ccn-cert.cni.es/publico/seriesCCN-STIC/series/400-Guias_Generales/401-glosario_abreviaturas/index.html - [glosarioCCN]
+
+%% https://www.sans.org/security-resources/glossary-of-terms/ - [glosarioSANS]
+
+%% https://csrc.nist.gov/glossary - [glosarioCSRCNIST]
+
+%%https://www.nist.gov/itl/smallbusinesscyber/cybersecurity-basics/glossary - [glosarioNIST]
+
+%%https://nvlpubs.nist.gov/nistpubs/ir/2013/NIST.IR.7298r2.pdf - [glosarioNISTIR7298]
+
+%https://attack.mitre.org/ - [mitreAttack]
+
+\newglossaryentry{cibercriminal}{
+sort={cibercriminal}, name={cibercriminal}, description={Se define en la seccción \ref{cibercriminal} }, plural={cibercriminales}, short={cibercriminal}
+}
+
+\newglossaryentry{actores}{
+sort={Actores de amenaza}, name={actor de amenaza}, description={Son grupos o individuos que con intenciones maliciosas o acciones hostiles, apuntan a explotar debilidades en un sistema de información u operación para ganar acceso no autorizado y afectar los datos, dispositivos, sistemas y redes, incluyendo la autenticidad de la información. Los actores de amenaza se pueden clasificar por su motivación y sofisticación \cite{def.canadiancentre, cis.def.threatactors}    }, plural={actores de amenaza}, short={CTA}
+}
+
+\newglossaryentry{ciberespacio}{
+sort={ciberespacio}, name={ciberespacio}, description={el complejo entorno resultante de la interacción de personas, programas informáticos y servicios en Internet mediante dispositivos tecnológicos y redes conectadas a ella, que no existe de forma física \cite{glosarioCSRCNIST}}, plural={ciberespacios}, short={ciberespacio}
+}
+
+
+\newglossaryentry{mitre}{
+sort={MITRE ATT&CK}, name={\href{https://attack.mitre.org/}{MITRE ATT\&CK}}, description={\href{https://mitre.org/}{MITRE Corporation} es una organización sin animo de lucro, fundada en 1958, la cual provee orientación sobre problemas tecnológicos como la ciberseguridad. Desde el 2013 MITRE ha estado recolectando información sobre amenazas cibernéticas para desarrollar una base de conocimiento accesible globalmente de las Tácticas, Técnicas, y Procedimientos (TTPs) utilizadas por los adversarios (cibercriminales) en el mundo real. Con base en esto se crea el MITRE ATT\&CK el cual recopila información que permitan entender como se comportan los atacantes para que se pueda proteger mejor las organizaciones y defenderse de las ciberamenazas \cite{cisco.whitepaper.mitreendpoint, cisco.def.mitre} }, plural={MITRE ATT&CK}, short={MITRE ATT&CK}
+}
+
+\newglossaryentry{microred}{
+sort={Microrred}, name={microrred}, description={grupo de cargas interconectadas y DER con límites eléctricos claramente definidos que actúa con una única entidad controlable con respecto a la red y que puede conectarse y desconectarse de ella para habilitar su modo de operación tanto en modo conectado a la red como en modo aislado \cite{IEEE.Microgrid}}, plural={microrredes}, short={microrred}
+}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Requerimientos
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newglossaryentry{autenticacion}{
+sort={Autenticación}, name={autenticación}, description={garantía de que una característica declarada de una entidad es correcta \cite{isoiec27000}}, plural={Autenticaciones}, short={autenticación}
+}
+
+\newglossaryentry{encriptacion}{
+sort={Encriptación}, name={encriptación}, description={Transformación criptográfica de datos (llamado "texto plano") en una forma (llamada "texto cifrado") que oculta el significado original de los datos para impedir que se conozcan o utilicen \cite{glosarioSANS}}, plural={encriptación}, short={encriptación}
+}
+
+\newglossaryentry{autenticidad}{
+sort={Autenticidad}, name={autenticidad}, description={Verificación de la identidad de un usuario, proceso o sistema, a menudo como requisito previo para permitir el acceso a los recursos de un sistema de información. \cite{glosarioNIST}}, plural={Autenticidades}, short={autenticidad}
+}
+
+\newglossaryentry{autorizacion}{
+sort={Autorización}, name={autorización}, description={Definición granular de permisos de acceso concedidos a un determinado usuario, dispositivo o sistema, habitualmente implementado mediando listas de control de acceso  \cite{glosarioCSRCNIST}}, plural={autorizaciones}, short={autorización}
+}
+
+\newglossaryentry{privacidad}{
+sort={Privacidad}, name={privacidad}, description={Libertad frente a la intromisión en la vida o los asuntos privados de una persona cuando dicha intromisión se derive de la recopilación y el uso indebido o ilegal de datos sobre dicha persona \cite{glosarioCSRCNIST}.}, plural={privacidad}, short={privacidad}
+}
+
+\newglossaryentry{norepudio}{
+sort={norepudio}, name={no-repudio}, description={El no repudio es la capacidad que tiene un sistema de demostrar que un usuario concreto y sólo ese usuario concreto envió un mensaje y que éste no ha sido modificado \cite{glosarioSANS}}, plural={no-repudio}, short={no-repudio} 
+}
+
+\newglossaryentry{fiabilidad}{
+sort={fiabilidad}, name={fiabilidad}, description={Probabilidad de que una función determinada funcione sin fallos en unas condiciones dadas durante un periodo de tiempo determinado \cite{glosarioCSRCNIST}}, plural={fiabilidad}, short={fiabilidad}
+}
+
+\newglossaryentry{safety}{
+sort={safety}, name={safety}, description={Se define en la seccción \ref{safety} }, plural={safety}, short={safety}
+}
+
+\newglossaryentry{vpn}{
+sort={VPN}, name={Virtual Private Network}, description={Una red virtual, construida sobre redes físicas existentes, que
+proporciona un túnel de comunicaciones seguro para los datos e información transmitida entre redes\cite{glosarioNISTIR7298}}, plural={VPN's}, short={VPN}
+}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Ataques, técnicas y métodos
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newglossaryentry{stuxnet}{ sort={Stuxnet},
+    name= {stuxnet},
+    description={reconocido como el primer malware en Sistemas de Control Industrial (ICS) fue considerado una \textit{cyberweapon} que tenia la intención de dañar centrifugadoras de uranio en Irán cambiando sus configuraciones de velocidad a través del PLC y haciéndole creer a los operadores que funcionaban de manera correcta}, plural= {stuxnet's}, short= {stuxnet}
+}
+
+\newglossaryentry{dos}{ sort={DoS},
+    name= {denial of service},
+    description={Es un tipo de ataque que busca saturar el sistema objetivo esto a partir de la ejecución de una gran cantidad de solicitudes y envió de paquetes a través del enlace de comunicación. El principal objetivo de este ataque es inhabilitar el sistema y que pierda su capacidad de respuesta. Si se realiza desde diferentes máquinas o una red botnet se denomina Distributed Denial of Service (DDoS)}, plural= {DoS}, short= {DoS}
+}
+
+\newglossaryentry{mitm}{
+sort={Man-In-The-Middle}, name={Man-In-The-Middle}, description={Este ataque busca redirigir el tráfico de los datos de manera que pasen por la red del atacante así este logrará monitorear, capturar e incluso manipular la información}, plural={MiTM}, short={MiTM}
+}
+
+\newglossaryentry{ransomware}{
+sort={Ransomware}, name={ransomware}, description={Es un tipo de ataque en el que los actores de la amenaza toman el control de los activos de un objetivo y exigen un rescate a cambio de la devolución de la disponibilidad y confidencialidad de los activos \cite{enisa.ransomware2022}}, plural={ransomwares}, short={ransonware}
+}
+
+\newglossaryentry{malware}{
+sort={malware}, name={malware}, description={El malware también conocido como código malicioso o lógica maliciosa, son un tipo de software o firmware desarrollados con la intención de tener un impacto adverso en la confidencialidad, integridad o disponibilidad de un sistema de la información o la operación. Algunos ejemplos tradicionales de malware son los virus, worms, troyano u otras entidades basadas en código que infectan un dispositivo. \cite{def.malware, enisa.threathlandscape2022}.
+Es uno de los más comunes en las redes eléctricas y los centros de control que implementan SCADA e Interfaz Humano-Computadora (HMI), principalmente buscan obtener acceso a la red de la víctima y según el tipo de código tiene un fin especifico, algunos de los más comunes son \textit{troyanos, ransomware, rookits y keyloggers}}, plural={malwares}, short={malware}
+}
+
+\newglossaryentry{phishing}{
+sort={Phishing}, name={phishing}, description={Es un ataque basado en ingeniería social utilizando mensajería electrónica que busca confundir a la víctima suplantando a una entidad legítima para que descargue contenido malicioso y poder infectar la red con malware, también se hace con el objetivo de obtener credenciales de autenticación para acceder a sistemas empresariales, redes sociales o cuentas bancarias}, plural={phishing}, short={phishing}
+}
+
+\newglossaryentry{spearphishing}{
+sort={Spear Phishing}, name={spear phishing}, description={Es un ataque de phishing dirigido a una persona u organizanización en específico}, plural={spear phishing}, short={spear phishing}
+}
+
+\newglossaryentry{smishing}{
+sort={Smishing}, name={smishing}, description={Es la misma técnica utilizada en el phishing pero el canal utilizado son los mensajes de texto celular (SMS)}, plural={Smishing}, short={Smishing}
+}
+
+\newglossaryentry{eavesdropping}{
+sort={eavesdropping}, name={eavesdropping}, description={Técnica de ataque en el que un atacante escucha pasivamente el protocolo de autenticación para capturar información que puede utilizarse en un ataque activo para hacerse pasar por el solicitante \cite{glosarioNISTIR7298}}, plural={eavesdropping}, short={eavesdropping}
+}
+
+\newglossaryentry{ingsocial}{
+sort={Ingeniería Social}, name={ingeniería social}, description={Son técnicas implementadas por los cibercriminales para la recopilación de información importante a través de las personas, el principal objetivo en este tipo de ataque es el ser humano ya que la mayoría de las ocasiones es un objetivo fácil debido a la falta de educación y conocimiento en términos de ciberseguridad. \textit{“La ingeniería social es el segundo ataque más común después del malware”}
+    \cite{Tufail2021}}, plural={Ingenieria Social}, short={Ingenieria Social}
+}
+
+\newglossaryentry{virus}{
+sort={Virus}, name={virus}, description={Programa informático que puede copiarse a sí mismo e infectar un ordenador sin permiso o conocimiento del usuario. Un virus puede corromper o borrar datos de un ordenador, utilizar programas de correo electrónico para propagarse a otros ordenadores o incluso borrar todo lo que haya en un disco duro \cite{glosarioNISTIR7298}}, plural={virus}, short={virus}
+}
+
+\newglossaryentry{worms}{
+sort={Worms}, name={worms}, description={Programa autorreplicante que se propaga a través de una red a otros sistemas informáticos sin necesidad de un programa anfitrión ni de la intervención del usuario para replicarse \cite{glosarioCSRCNIST}}, plural={worms}, short={worms}
+}
+
+\newglossaryentry{troyano}{
+sort={Troyano}, name={troyano}, description={Un programa de computadora que parece tener una función útil, pero que también tiene una función oculta y potencialmente maliciosa que evita los mecanismos de seguridad, a veces explotando autorizaciones legítimas de una entidad del sistema que invoca el programa \cite{glosarioNISTIR7298}}, plural={troyanos}, short={troyano}
+}
+
+\newglossaryentry{backdoor}{
+sort={Backdoor}, name={backdoor}, description={ Es una herramienta instalada después de un compromiso para dar al atacante un acceso más fácil al sistema comprometido evadiendo cualquier mecanismo de seguridad que esté en su lugar \cite{glosarioSANS}}, plural={backdoors}, short={backdoor}
+}
+
+\newglossaryentry{c2}{
+sort={Command and Control}, name={command and control (C2)}, description={Command and Control consiste en técnicas que los adversarios utilizan para comunicarse y enviar comandos a sistemas, dispositivos, controladores y plataformas comprometidas con aplicaciones especializadas utilizadas en entornos ICS \cite{mitre.commandandcontrol}}, plural={C2}, short={C2}
+}
+
+\newglossaryentry{rootkit}{
+sort={Rootkit}, name={rootkit}, description={Un conjunto de herramientas (programas) que un hacker utiliza para enmascarar la intrusión y obtener acceso de nivel administrador a una computadora o red informática \cite{glosarioSANS}}, plural={rootkits}, short={rootkit}
+}
+
+\newglossaryentry{tsa}{
+sort={Time Synchronization Attack}, name={time synchronization attack (TSA)}, description={Los atacantes se aprovechan de la dependencia al tiempo de las Smart Grid, a través de un ataque a los tiempos de sincronización \cite{TSAZhang2013}}, plural={Time Synchronization Attack's}, short={TSA}
+}
+
+\newglossaryentry{apt}{
+sort={Advanced Persistent Threat}, name={Advanced Persistent Threat}, description={Se define en la seccción \ref{aptsection}}, plural={APTs}, short={APT}
+}
+
+\newglossaryentry{masquerade}{
+sort={Masquerade Attack}, name={masquerade attack}, description={Un tipo de ataque en el que una entidad del sistema se hace pasar ilegítimamente por (asume la identidad de) otra entidad \cite{glosarioSANS}}, plural={masquerade attacks}, short={Masquerade Attack}
+}
+
+\newglossaryentry{analisistrafico}{
+sort={Analisis de tráfico}, name={análisis de tráfico}, description={Una forma de ataque pasivo en el que un intruso observa información sobre las llamadas (aunque no necesariamente el contenido de los mensajes) y hace inferencias, por ejemplo, a partir de los números de origen y destino, o la frecuencia y longitud de los mensajes \cite{glosarioNISTIR7298}}, plural={Análisis de tráficos}, short={Análisis de tráfico}
+}
+
+\newglossaryentry{fdi}{
+sort={false data injection (FDI)}, name={false data injection (FDI)}, description={Se refiere específicamente al caso en que un atacante compromete las lecturas de los sensores de tal manera que se introducen errores no detectados en los cálculos de las variables y valores de estado para afectar las operaciones de control o la información desplegada en sistemas SCADA \cite{FDI.Ahmed2020}}, plural={false data injection}, short={FDI}
+}
+
+
+\newglossaryentry{passattack}{
+sort={Password attack}, name={password attack}, description={//////.}, plural={password attacks}, short={}
+}
+
+\newglossaryentry{payload}{
+sort={Payload}, name={payload}, description={Se refiere al código malicioso utilizado para explotar y comprometer redes y sistemas informáticos \cite{def.payload}}, plural={payloads}, short={}
+}
+\newglossaryentry{spoofing}{
+sort={spoofing}, name={spoofing}, description={Conjunto de técnicas de suplantación de identidad. %https://intellectum.unisabana.edu.co/bitstream/handle/10818/26176/Juan%20Camilo%20Gutiérrez%20Pinzón%20%28Tesis%29.pdf?sequence=1&isAllowed=y  p.25
+} plural={spoofings}, short={} 
+}
+
+\newglossaryentry{sniff}{
+sort={Sniffing}, name={sniffing}, description={Monitoreo o grabación de datos mientras se transmiten por un enlace de comunicaciones, sin alterarlos ni afectarlos \cite{glosarioNISTIR7298}}, plural={sniffings}, short={sniff}
+}
+
+\newglossaryentry{replayattack}{
+sort={Replay attack}, name={replay attack}, description={Ataque que consiste en la captura de información transmitida de autenticación o control de acceso y su posterior retransmisión con la intención de producir un efecto no autorizado u obtener acceso no autorizado \cite{glosarioCSRCNIST}}, plural={replay attacks}, short={}
+}
+
+\newglossaryentry{watering}{
+sort={watering hole}, name={watering hole}, description={Es un ciberataque dirigido mediante el cual un ciberdelincuente compromete un sitio web o un grupo de sitios web frecuentados por un grupo específico de personas \cite{def.wateringhole}}, plural={watering hole}, short={}
+}
+
+\newglossaryentry{wiretapping}{
+sort={wiretapping}, name={wiretapping}, description={Control y registro de los datos que circulan entre dos puntos de un sistema de comunicación \cite{glosarioSANS}}, plural={wiretapping attacks}, short={}
+}
+
+\newglossaryentry{industroyer}{
+sort={industroyer}, name={industroyer}, description={es un sofisticado \textit{framework} de malware diseñado para causar un impacto en los procesos de trabajo de los Sistemas de Control Industrial (ICS), específicamente en los componentes utilizados en las subestaciones eléctricas \cite{mitre.industroyer}}, plural={insdustroyer}, short={}
+}
+
+\newglossaryentry{rat}{
+sort={Troyano de acceso remoto}, name={troyano de acceso remoto (RAT)}, description={Los troyanos de acceso remoto son programas que permiten la vigilancia encubierta o el acceso no autorizado al PC de la víctima }, plural={Troyanos de acceso remoto \cite{def.RAT}}, short={RAT}
+}
+
+\newglossaryentry{icc}{
+sort={infraestructura crítica cibernética}, name={infraestructura crítica cibernética (ICC)}, description={Son aquellas infraestructuras estratégicas que estan soportadas por Tecnologías de la Información y Comunicaciones (TIC) o Tecnologías de la Operación (OT), cuyo funcionamiento es indispensable, por lo que su perturbación o destrucción tendría un grave impacto sobre los servicios esenciales de un país \cite{ccoci.GuiaICC2015}}, plural={Infraestructuras Críticas Cibernéticas}, short={ICC}
+}
+
+\newglossaryentry{first}{
+sort={FIRST}, name={Forum of Incident Response and Security Teams (FIRST)}, description= {Es la principal organización mundial y líder reconocida en respuesta a incidentes digitales. Cuenta con
+más de 300 miembros, repartidos en África, América, Asia, Europa y Oceanía. Este foro reúne una variedad de equipos de respuesta a incidentes del gobierno, industria y academia, y tiene como objetivo fomentar la cooperación y la coordinación en la prevención de incidentes, para estimular la reacción rápida ante los mismos, y para promover el intercambio de información entre los miembros y la comunidad en general \cite{CONPES.3854}}, plural={FIRST}, short={FIRST}
+}
+
