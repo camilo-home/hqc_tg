@@ -22,13 +22,13 @@ architecture Behavioral of tb_RMEncoder is
 
 	component RMEncoder is
 		Generic (	m 					: 		natural := 7;
-					generator_matrix_01 : 		boolean := true);
+					generator_matrix_01 : 		boolean := false);
 	    Port (		data_in 			: in 	std_logic_vector(m downto 0);
 	           		data_out 			: out 	std_logic_vector(2**m-1 downto 0));
 	end component;
 
 	constant	m	 					: natural := 7;
-	constant	generator_matrix_01		: boolean := true;
+	constant	generator_matrix_01		: boolean := false;
 	signal		data_in 				: std_logic_vector (m downto 0) := (others => '0');
 	signal		data_out 				: std_logic_vector (2**m-1 downto 0) := (others => '0');
 
