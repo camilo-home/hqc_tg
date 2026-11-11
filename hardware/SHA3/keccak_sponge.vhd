@@ -16,6 +16,25 @@
 --   comando (in_ready='1'). No se acepta un comando nuevo mientras haya salida
 --   pendiente.
 --
+-- Modo sin limite (solo SHAKE128/SHAKE256):
+--   out_len = 0xFFFFFFFF (ver keccak_sponge_pkg.make_cmd_stream). El modulo
+--   entrega palabras indefinidamente, permutando cada vez que agota el rate,
+--   y out_last nunca se activa. Termina solo con "abort".
+--   En SHA3-256/512 el valor 0xFFFFFFFF no tiene efecto especial (salida fija).
+--
+-- abort (opcional, '0' por defecto):
+--   Pulso de 1 ciclo que cancela la operacion en curso y devuelve el modulo a
+--   S_CMD (in_ready='1' para un comando nuevo). Es valido en cualquier estado:
+--     * absorbiendo o en padding: vuelve a S_CMD en el ciclo siguiente.
+--     * entregando salida (S_SQUEEZE): vuelve a S_CMD en el ciclo siguiente;
+--       una palabra aceptada en ese mismo ciclo puede considerarse descartada.
+--     * durante una permutacion: espera a que el nucleo termine (<= ~26
+--       ciclos, no se puede interrumpir a mitad de rondas) y luego vuelve a S_CMD.
+--   En S_CMD se ignora. El siguiente comando limpia el estado de Keccak, asi
+--   que no queda rastro de la operacion abortada.
+--   Uso tipico (sampler con rechazo): comando en modo sin limite, leer hasta
+--   completar el muestreo, pulsar abort.
+--
 -- Orden de bits/bytes de las palabras de 64 bits (BIG_ENDIAN_WORDS = false):
 --   byte j del flujo -> in_data(8*(j mod 8)+7 downto 8*(j mod 8))   (byte 0 en [7:0])
 --   bit k del byte   -> bit k del byte  (LSB = bit 0)
@@ -39,6 +58,7 @@ entity keccak_sponge is
   port (
     clk       : in  std_logic;
     rst       : in  std_logic;
+    abort     : in  std_logic := '0';
 
     in_valid  : in  std_logic;
     in_ready  : out std_logic;
@@ -77,6 +97,7 @@ architecture rtl of keccak_sponge is
   signal suffix     : std_logic_vector(7 downto 0);
   signal bytes_left : unsigned(23 downto 0);   -- bytes de mensaje por absorber
   signal out_left   : unsigned(31 downto 0);   -- bytes de salida por entregar
+  signal unlimited  : std_logic;               -- modo sin limite (salida hasta abort)
 
   signal lane_idx   : integer range 0 to 24;   -- lane que se escribe / se lee
   signal pad_lane   : integer range 0 to 24;   -- lane donde va el byte de sufijo
@@ -123,7 +144,7 @@ begin
 
   in_ready  <= '1' when (state = S_CMD or state = S_ABSORB) else '0';
   out_valid <= '1' when state = S_SQUEEZE else '0';
-  out_last  <= '1' when (state = S_SQUEEZE and out_left <= 8) else '0';
+  out_last  <= '1' when (state = S_SQUEEZE and unlimited = '0' and out_left <= 8) else '0';
 
   ---------------------------------------------------------------------------
   -- Lectura del lane actual (squeeze) y enmascarado de la ultima palabra
@@ -212,10 +233,12 @@ begin
   -- FSM
   ---------------------------------------------------------------------------
   process(clk, rst)
+    variable unl : std_logic;
   begin
     if rst = '1' then
       state      <= S_CMD;
       ret_state  <= S_CMD;
+      unlimited  <= '0';
       rate_lanes <= 17;
       suffix     <= x"1F";
       bytes_left <= (others => '0');
@@ -233,10 +256,16 @@ begin
             lane_idx   <= 0;
             bytes_left <= unsigned(in_data(31 downto 8));
             out_left   <= unsigned(in_data(63 downto 32));
+            if in_data(63 downto 32) = x"FFFFFFFF" then
+              unl := '1';
+            else
+              unl := '0';
+            end if;
+            unlimited  <= '0';                            -- solo SHAKE puede ser ilimitado
             if in_data(1 downto 0) = MODE_SHAKE128 then
-              rate_lanes <= 21;  suffix <= x"1F";
+              rate_lanes <= 21;  suffix <= x"1F";  unlimited <= unl;
             elsif in_data(1 downto 0) = MODE_SHAKE256 then
-              rate_lanes <= 17;  suffix <= x"1F";
+              rate_lanes <= 17;  suffix <= x"1F";  unlimited <= unl;
             elsif in_data(1 downto 0) = MODE_SHA3_256 then
               rate_lanes <= 17;  suffix <= x"06";
               out_left   <= to_unsigned(32, 32);
@@ -256,7 +285,9 @@ begin
 
         -----------------------------------------------------------------
         when S_ABSORB =>
-          if in_valid = '1' then
+          if abort = '1' then
+            state <= S_CMD;
+          elsif in_valid = '1' then
             if bytes_left(23 downto 3) /= 0 then          -- palabra completa (>= 8 bytes)
               bytes_left <= bytes_left - 8;
               if lane_idx = rate_lanes - 1 then           -- bloque lleno -> permutar
@@ -287,12 +318,16 @@ begin
 
         -----------------------------------------------------------------
         when S_PAD1 =>
-          state <= S_PAD2;
+          if abort = '1' then
+            state <= S_CMD;
+          else
+            state <= S_PAD2;
+          end if;
 
         when S_PAD2 =>
           lane_idx <= 0;
-          if out_left = 0 then
-            state <= S_CMD;                               -- nada que sacar
+          if abort = '1' or out_left = 0 then
+            state <= S_CMD;                               -- abortado, o nada que sacar
           else
             ret_state <= S_SQUEEZE;
             state     <= S_PSTART;
@@ -300,21 +335,34 @@ begin
 
         -----------------------------------------------------------------
         when S_PSTART =>
+          if abort = '1' then
+            ret_state <= S_CMD;                           -- el nucleo ya arranca: esperar su fin
+          end if;
           state <= S_PWAIT;
 
         when S_PWAIT =>
           if c_done = '1' then
-            state <= ret_state;
+            if abort = '1' then
+              state <= S_CMD;
+            else
+              state <= ret_state;
+            end if;
+          elsif abort = '1' then
+            ret_state <= S_CMD;                           -- abortar al terminar la permutacion
           end if;
 
         -----------------------------------------------------------------
         when S_SQUEEZE =>
-          if out_ready = '1' then
-            if out_left <= 8 then
+          if abort = '1' then
+            state <= S_CMD;
+          elsif out_ready = '1' then
+            if unlimited = '0' and out_left <= 8 then
               out_left <= (others => '0');
               state    <= S_CMD;
             else
-              out_left <= out_left - 8;
+              if unlimited = '0' then
+                out_left <= out_left - 8;
+              end if;
               if lane_idx = rate_lanes - 1 then           -- rate agotado -> otra permutacion
                 lane_idx  <= 0;
                 ret_state <= S_SQUEEZE;

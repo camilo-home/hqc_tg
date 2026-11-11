@@ -19,6 +19,11 @@ package keccak_sponge_pkg is
                     msg_len_bytes : natural;
                     out_len_bytes : natural) return std_logic_vector;
 
+  -- Comando en modo sin limite (solo SHAKE): out_len = 0xFFFFFFFF.
+  -- La salida no termina hasta que se pulse "abort" en keccak_sponge.
+  function make_cmd_stream(mode          : std_logic_vector(1 downto 0);
+                           msg_len_bytes : natural) return std_logic_vector;
+
 end package;
 
 package body keccak_sponge_pkg is
@@ -31,6 +36,16 @@ package body keccak_sponge_pkg is
     c(1 downto 0)   := mode;
     c(31 downto 8)  := std_logic_vector(to_unsigned(msg_len_bytes, 24));
     c(63 downto 32) := std_logic_vector(to_unsigned(out_len_bytes, 32));
+    return c;
+  end function;
+
+  function make_cmd_stream(mode          : std_logic_vector(1 downto 0);
+                           msg_len_bytes : natural) return std_logic_vector is
+    variable c : std_logic_vector(63 downto 0) := (others => '0');
+  begin
+    c(1 downto 0)   := mode;
+    c(31 downto 8)  := std_logic_vector(to_unsigned(msg_len_bytes, 24));
+    c(63 downto 32) := x"FFFFFFFF";
     return c;
   end function;
 
