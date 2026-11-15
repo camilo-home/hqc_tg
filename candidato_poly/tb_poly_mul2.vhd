@@ -1,0 +1,1245 @@
+-- Testbench de poly_mul2 (HQC-128) con los vectores del KAT 0:
+--   * posiciones de Y (66)  : las del KAT 0 (k=00..65)
+--   * denso H               : el vector H del KAT 0 (2209 bytes, byte 0 = bits [7:0] de la palabra 0)
+--   * canal B (solo para probar el segundo canal): H xor (H << 1) (mod 2^N)
+--   Esperado = vect_mul(Y, vector) de hqc128.py, comprobado ademas con un modelo ciclo a ciclo.
+-- El TB hace de "top": instancia las memorias (position_mem tuya, ram64_sdp para densos y
+-- resultados, ram64_tdp para los acumuladores) y NO las limpia nunca: los casos se ejecutan
+-- seguidos, asi que a partir del segundo el acumulador contiene la basura del producto anterior.
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity tb_poly_mul2 is
+end tb_poly_mul2;
+
+architecture sim of tb_poly_mul2 is
+
+  constant K    : integer := 6;
+  constant W    : integer := 277;
+  constant MAXP : integer := 75;
+
+  type int_vec     is array (0 to K-1) of integer;
+  type pos_matrix  is array (0 to K-1, 0 to MAXP-1) of integer;
+  type word_vec    is array (0 to W-1) of std_logic_vector(63 downto 0);
+  type word_matrix is array (0 to K-1, 0 to W-1) of std_logic_vector(63 downto 0);
+  type name_vec    is array (0 to K-1) of string(1 to 42);
+
+  constant NAMES : name_vec := ("KAT0: y*h (n=66), canal B = h^(h<<1)      ", "KAT0 repetido (acumulador sucio)          ", "KAT0: primeras 11 posiciones de y         ", "extremos alternados n=75 (0,N-1,1,N-2..)  ", "n=1 [N-1]                                 ", "n=1 [0]                                   ");
+  constant NPOS  : int_vec := (66, 66, 11, 75, 1, 1);
+  constant LAT   : int_vec := (18829, 18829, 3374, 21358, 564, 564);     -- latencia start->done prevista (ciclos)
+
+  constant POS : pos_matrix := (
+    (11110, 15726, 3221, 12869, 11694, 3751, 12085, 11991, 10548, 676, 13365, 8424, 1373, 955, 10149, 9317, 5983, 3654, 13065, 11928, 15311, 15603, 17001, 15646, 8559, 13226, 14311, 17201, 6213, 1479, 805, 2262, 10426, 5699, 6823, 853, 2231, 3021, 8054, 9525, 1621, 1802, 7616, 3211, 5970, 13780, 14674, 10895, 7331, 10836, 10431, 17666, 700, 1918, 15894, 9307, 13794, 14974, 14273, 16093, 7559, 1351, 10194, 6839, 7151, 12841, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    (11110, 15726, 3221, 12869, 11694, 3751, 12085, 11991, 10548, 676, 13365, 8424, 1373, 955, 10149, 9317, 5983, 3654, 13065, 11928, 15311, 15603, 17001, 15646, 8559, 13226, 14311, 17201, 6213, 1479, 805, 2262, 10426, 5699, 6823, 853, 2231, 3021, 8054, 9525, 1621, 1802, 7616, 3211, 5970, 13780, 14674, 10895, 7331, 10836, 10431, 17666, 700, 1918, 15894, 9307, 13794, 14974, 14273, 16093, 7559, 1351, 10194, 6839, 7151, 12841, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    (11110, 15726, 3221, 12869, 11694, 3751, 12085, 11991, 10548, 676, 13365, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    (0, 17668, 1, 17667, 2, 17666, 3, 17665, 4, 17664, 5, 17663, 6, 17662, 7, 17661, 8, 17660, 9, 17659, 10, 17658, 11, 17657, 12, 17656, 13, 17655, 14, 17654, 15, 17653, 16, 17652, 17, 17651, 18, 17650, 19, 17649, 20, 17648, 21, 17647, 22, 17646, 23, 17645, 24, 17644, 25, 17643, 26, 17642, 27, 17641, 28, 17640, 29, 17639, 30, 17638, 31, 17637, 32, 17636, 33, 17635, 34, 17634, 35, 17633, 36, 17632, 37),
+    (17668, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  );
+
+  -- vector H del KAT 0, en palabras de 64 bits (palabra k = bytes 8k..8k+7, byte 0 en los bits [7:0])
+  constant DENA : word_vec := (
+    x"cd11b35af974541c", x"bd89014bf49a1a3f", x"a1df389416b9c5fa", x"5fdb805abe75fa2b",
+    x"ea4c2f67a3df5c72", x"e35d95f3b811c634", x"cac6da7d4f48fecb", x"7405faad431a64a0",
+    x"5fc907d37d56136f", x"3973b3bee6785b32", x"38ea1901aa99bf8c", x"e51e97f874adc548",
+    x"26e93528d4489109", x"675518e73d17e2ba", x"cdef48b8f4b77788", x"c58da457ffb8cf6a",
+    x"1ff6bb9e309c2126", x"f1f03334149f33af", x"f6ddec04e224bd96", x"71133e9e4a254043",
+    x"6ce658708e6a8174", x"9c8c6fa0d9b59202", x"d6ae32ba12c3c3e8", x"2dde4d32ce447ee6",
+    x"9831444110509778", x"73f076aaf841a93e", x"c93bd4b2d956a494", x"99b8793e890413c8",
+    x"677bd8b93f4d731b", x"e1e517723bdb73fb", x"56e72428825a8457", x"2681ef9107a6d531",
+    x"d9dba6669b3337b0", x"d1787aa7824288eb", x"376651c02df6f910", x"df59fb748505121a",
+    x"90e531c6749c95f7", x"951fb3f20d8f8306", x"b542d274bf89ca1a", x"f43a998111efee75",
+    x"d698a956f78c03ca", x"fc879770112b3085", x"686f71f372b2a9be", x"41651fffb0f5c0a4",
+    x"224ff7bd616d44d6", x"56ac50a3d5883dde", x"9e790ff69a49c8bb", x"ca4a2452981e8535",
+    x"aa2bcc4f806be582", x"b7dc2a203a6b9e8a", x"6164d4a5d259f9ab", x"eca623f6bca80100",
+    x"67efcae7e9535b91", x"f315d36cbfb387c1", x"7b38a62379a174fe", x"69e59e72ce4c3450",
+    x"626fcbfd7e654105", x"1d3f61f6ffb679c7", x"9c0242e472bec190", x"4ec39eeb01d35e31",
+    x"6a6aa071e555dbe4", x"aa506408597a2dca", x"8da752a72a4850f2", x"bd49830dc81fc0df",
+    x"4036bb3ffce7c81b", x"116c786e9339f058", x"a808a75ecb0dce1c", x"61a965dfd1584438",
+    x"75659a8d375f2adc", x"ec8e96216ca06b47", x"ca0be889c2842e68", x"2ad1c2ac47ccfdb6",
+    x"05902ef9c852a6be", x"cdb2daa2f4a8f0e2", x"bbba6eb96a6b46b2", x"01c987f33517f9c3",
+    x"656be8ca5422e37a", x"1bcea505afd833e3", x"d1ab86efd0a7733f", x"349330379b96b3b1",
+    x"29e95f9f23a08516", x"40c481b5bdf68ede", x"28a3763080f2b5bd", x"d9a02f629286aa23",
+    x"e9c3e1015779427e", x"ab0c77f40aadc11c", x"24f2bdfc447ab30f", x"2290b164e73e8b37",
+    x"c69ce699ce79af33", x"71d0e5daf97a9b88", x"76e2949e123d1ce1", x"b11ac91bdd2ac276",
+    x"7ff312405baa27bf", x"3e2e8ee1f4ff22d2", x"107ec2b38ea02280", x"cc51501ecb7903e7",
+    x"f75e7a5edd0cb271", x"344f657d79069c6a", x"96a728a1d21b182a", x"d01ea366ebfccfc7",
+    x"b440d1f8d1fc03f0", x"1fbc7f8207f42b4c", x"eeeffc493277e20b", x"ce2b95fd717966c1",
+    x"e4d48a9d79d51531", x"8977613dd14b4a2a", x"2d01356178164701", x"7d834d4817f1bf4c",
+    x"30707775c82bb952", x"76101e064f5e196b", x"837f8f7de3b4aa00", x"8dcb38a05fb0719f",
+    x"0caeb91e25e86e2f", x"28e1d28bde0ca4ba", x"88c4544a4c8afe02", x"4d7b10368e309382",
+    x"e8f354eae9cadef8", x"dc7aaa36dd9f7c92", x"d2f3f4fbd51f8a83", x"7bfd1459a3ece0b5",
+    x"9a874bf96067e1c6", x"5ce6f6742ee1da90", x"f467bdc36f7106fe", x"7e386a6636f90a38",
+    x"d958f96b5864141e", x"c163b5067fdc1ce0", x"c70612529a5281a3", x"28959ef4384b1dc6",
+    x"ede037ba6c58e8f1", x"58946d8c02e4ff74", x"f4c0c336dd15b292", x"0685bb507b868128",
+    x"9805924a3da7f27d", x"1fc0142983441f85", x"6e53920b910d1d64", x"212a8965783900d7",
+    x"f7835e728819d13a", x"8fbb32d070536a7f", x"6b1d6cbd25932d66", x"49817048914ef3d6",
+    x"ed95939c184aa8ab", x"3dc6a9e08af96d37", x"b371c449095388fb", x"ad21764c0b46926a",
+    x"a62ad523dccdb5c9", x"ffd8a6326c1f9612", x"be891c6b60e7013e", x"a87bba3d56cfd662",
+    x"9584b386bce5e086", x"905cbe53ee89ea12", x"d8fae26dab0a9d7d", x"84c88ffef12fbedb",
+    x"9ac8859af4f80a64", x"599af1d6bf91ddcc", x"3f5b280088aeadb8", x"781a58ce097c4de0",
+    x"51f825808751a7f9", x"6111a2dd857722dd", x"89fd7c7ae8e3f83c", x"5d4bce7feb0c8ece",
+    x"5dbefb0d15168b0b", x"72547ea1e1b890f0", x"9017a103bf565c1a", x"f7f081caf8a57d2c",
+    x"ba3211d325a5b05c", x"f582a9961a12098a", x"43dbb842967c4ee1", x"424ecec08d65c54c",
+    x"dbc223c21e785c06", x"f92d22bea80162e6", x"0f9c9521e43a41eb", x"b76b8af6d1fd5a62",
+    x"1b7ef5f26a894bab", x"fe99ef721c68fe50", x"07ed326c206efa54", x"2203a3bd06371f90",
+    x"d25d3ac42cbf89e5", x"fafb5f63f509da17", x"c718722ccedcb591", x"a2d77a216b1ce67f",
+    x"10dbe5a0e8ba43d3", x"336d0c012d684961", x"e42d8cbba00f2f11", x"7fc3d7bc6b8f9648",
+    x"0b36fe8ed57e506a", x"838db561d562e09e", x"1a3f31e880bd1338", x"655c7423cecd5c45",
+    x"0e6c639b4067208e", x"a7749b0a4a327e6b", x"41038a089034bd5e", x"d0035cb3268031e5",
+    x"2e764b5691b6959c", x"91b59ce712249ade", x"e85d03f8ad74dfea", x"c0f213b2f8ade466",
+    x"32670e1a0910326a", x"99e250e8de5357eb", x"4fd410ed455f7821", x"93134093110d7e37",
+    x"4989abbbd1a137f9", x"b75625d1128a3340", x"684b6f7f00938623", x"e5bb62947efdd481",
+    x"aaf9eacd3933993b", x"dd7679fa3b95eb2f", x"7f09267cc6a3a24c", x"2a393cf07dc45eb0",
+    x"9d4de040bf4c9f9a", x"7e14e970d5bf3100", x"b0e3adfd284d6980", x"0899df98d7c10d77",
+    x"9be51ae947a4b03c", x"2e35420830a60a16", x"851dfd14795f42f4", x"f45459cb81f25887",
+    x"504f6bd75cff96a1", x"08a6b0de963eb78b", x"092dc1cda974ab05", x"ca32d2ddbcf4f4cd",
+    x"befd395df38b8d0b", x"489dfae8c7a2038d", x"2663cb87435e1ee5", x"693312461d3832a9",
+    x"731ad206aa5492a8", x"f087e36418766dcb", x"f79f016aadf80fd1", x"6fd6974a8fe2d4d0",
+    x"85e9e0660b9a7db8", x"2761061649cc658f", x"f037f3819a557955", x"9dc48e44dca35a6e",
+    x"1db7fdb557362b35", x"a1cc68eacddad93a", x"0a0885d310fd9a91", x"186d706b86dd5adb",
+    x"1421a023a8d3b21e", x"f41947d4f8bf2878", x"853171a5d81dd35f", x"48477640f2046c99",
+    x"277bf6914f2925de", x"551ee04c77471cc6", x"d266eeaa4270581f", x"2577c51083bf4868",
+    x"0e741c28cd0328b0", x"37f666342de1a512", x"e4e40d8533d215c0", x"f9ba70fe2d9a0a68",
+    x"55058b13f240f6d3", x"003867c07889e08e", x"b66ae76b3b76331a", x"d608fa7c89e12a5a",
+    x"a11216126d5164a8", x"c90528b1d203f140", x"295310555633743b", x"ef4d8c28b0d13a2c",
+    x"3e6299869d8b97ec", x"584f7a01ab87fe05", x"8e92fe8ad48d581a", x"54bb3bebb68ee938",
+    x"1008327904642e8f", x"d62324731e709707", x"1ddb28be0c0c32aa", x"581f7b1dfad29b54",
+    x"b5187275531a4d65", x"a496569c6838dd86", x"485db6ef03186a38", x"b2e91b82bcc2d246",
+    x"81d1208f789ab6bc", x"804bf57b163036e2", x"4d93ae9f5f2a956e", x"f5383e22ea614100",
+    x"362bc88df0ef8a4f", x"7ab901361c00434a", x"27ec4ee0b99a7a48", x"061d6826a404fa50",
+    x"0000000000000019"
+  );
+  constant DENB : word_vec := (
+    x"5732d5ef0b9cfc24", x"c69b03dc1dae2e40", x"e26149bc3bca4e0f", x"e06c80efc29e0e7c",
+    x"3ed471a8e461e496", x"25e6be14c8324a5d", x"5f4b6e87d1d9035c", x"9c0e0ff7c52eade1",
+    x"e05b087587fa35b1", x"4b94d4c32a88ed56", x"493e2b02ffaac094", x"2f23b8089df64fd8",
+    x"6b3b5f797cd9b31a", x"a9ff2929473827ce", x"5631d9c91dd99898", x"4e96ecf800c951bf",
+    x"201bcca251a4636b", x"1210555c3da154f1", x"1b66340d266dc6bb", x"933543a2de6fc0c4",
+    x"b52ae89192bf839c", x"a594b0e16adeb606", x"7bf257ce37444439", x"7662d75752cc832b",
+    x"a853ccc330f1b988", x"94109bff08c2fb43", x"5b4c7dd76bfbedbc", x"aac88b439b0c3459",
+    x"a98c69cb41d7952c", x"222f39964c6d940d", x"fb296c7986ef8cf8", x"6b8230b308eb7f53",
+    x"6a6ceaabad5558d0", x"73888fe886c7993c", x"59aaf240761b0b31", x"61ea0d9d8f0f362e",
+    x"b12f524a9da5be18", x"bf20d4161690850b", x"dfc7769dc09a5e2f", x"1c4faa833230329e",
+    x"7ba9fbfb1894045f", x"0588b990337d518e", x"b8b1921597d7fac3", x"c3af2000d11e41ec",
+    x"66d018c7a3b7cd7a", x"fbf4f1e47e984662", x"a28b101baeda59cd", x"5ede6cf7a8238f5e",
+    x"fe7c54d080bc2e87", x"d8647e604ebca39f", x"a3ad7dee76ea0afc", x"35ea641bc5f80300",
+    x"a8305f283bf5ecb2", x"153e75b5c0d48843", x"8d49ea658ae39d03", x"ba2ea29752d45cf0",
+    x"a6b05c0782afc30f", x"2741a21b00da8a49", x"a406c72c97c342b0", x"d344a33d0275e252",
+    x"bebfe0922ffe6c2c", x"fef0ac18eb8e765e", x"96e9f7e97ed8f117", x"c7da851658204160",
+    x"c05bcd400528582c", x"33b488b3b54a10e8", x"f819e9e35d165224", x"a2fbae6073e8cc49",
+    x"9faeaf9759e17f64", x"3593ba63b5e0bdc9", x"5e1c399a478c72b9", x"7f7247f4c85506db",
+    x"0eb0730a58f7ebc2", x"56d76fe71df91126", x"ccceb3cbbebdcbd7", x"025a88155f380a44",
+    x"afbc395efc67258e", x"2c53ef0ef0685425", x"72fc8b3071e99541", x"5db55058acbbd4d2",
+    x"7a3be0a164e18f3a", x"c14d82dec61b9362", x"79e59a518117dec7", x"6ae071a7b78bfe65",
+    x"3a442303f98bc683", x"fd14981c1ff64325", x"6d17c604cc8fd510", x"67b1d3ad29439d59",
+    x"4ba52baa528af155", x"92712e6f0b8fac99", x"9b27bda236472523", x"d32f5b2c677f469a",
+    x"801536c0ecfe68c0", x"427393221d016776", x"308347d493e06780", x"54f3f0235d8b0429",
+    x"19e28ee36715d692", x"5cd1af878b0ba4bf", x"bbe979e2762d287e", x"7023e5ab3c055048",
+    x"dcc1720972040411", x"20c48086081c7dd5", x"333004db5698261d", x"527cbe07938bab42",
+    x"2d7d9fa78a7f3f52", x"9b99a34673ddde7f", x"77035fa3883ac902", x"8685d7d83812c1d4",
+    x"5090999e587ccbf6", x"9a30220ad1e22bbd", x"8580918624ddfe00", x"965d49e0e0d092a0",
+    x"15f3cb226e38b270", x"7922779c6215edce", x"994cfcded59f0206", x"d78d305b9251b487",
+    x"3915fd3f3a5f6308", x"648ffe5b66a185b7", x"77141d0c7f209f84", x"8c073ceae43521de",
+    x"af89dc0ba0a8224a", x"e52b1a9c73226fb1", x"1ca8c645b1930b02", x"8248beaa5b0b1e49",
+    x"6be90bbde8ac3c22", x"43a4df0a80642521", x"490a36f7aef782e4", x"79bea31c48dd264b",
+    x"362058ceb4e93913", x"e9bcb694072d019d", x"1d41455b673ed7b6", x"0b8ecdf08c8b8379",
+    x"a80eb6de46e81687", x"20403c7a85cc208e", x"b2f4b61cb31727ac", x"637f9baf884b0179",
+    x"1885e297982a734e", x"90cd577090f5be80", x"bd27b5c76eb577ab", x"da8390d9b3d3147a",
+    x"36beb4a428dff9fd", x"464bfa219f0bb758", x"d5924cdb1bf4990d", x"f7639ad41dcbb6bf",
+    x"ea7f7f646556de5a", x"0069ea56b420ba37", x"c39b24bda1290343", x"f88cce47fb507aa7",
+    x"be8dd48bc52e218b", x"b0e5c2f4339a3e37", x"690f26b6fd1fa786", x"8d5990031370c36c",
+    x"af598eaf1d081ead", x"eaaf127bc0b26655", x"41ed780199f3f6c8", x"882ee9521b84d620",
+    x"f2086e8189f2e80b", x"a332e7668f996767", x"9a07848f39240844", x"e7dc52803d159353",
+    x"e6c30d173f3b9d1d", x"96fc83e222c9b110", x"b038e304c1fae42e", x"1811825f09ef8775",
+    x"ce5632756eeed0e5", x"1e87faba2e361a9f", x"c46cc8c7ba84d322", x"c6d3534197ae4fd4",
+    x"6c4664462288e40a", x"0b7767c3f803a72b", x"10a5bf622c4ec23c", x"d9bc9f1b7207eea6",
+    x"2d831e16bf9bdcfc", x"03aa319624b902f0", x"083756b460b30efd", x"6604e4c70a5920b0",
+    x"76e74f4c75c09a2f", x"0f0de1a41f1a6e38", x"492896755365deb2", x"e7798e63bd252a80",
+    x"316c2ee139cec474", x"55b7140377b8dba3", x"2c7695cce0117133", x"804478c4bc90bad9",
+    x"1d5b03937f82f0be", x"8496dfa27fa721a2", x"2e41523981c73549", x"afe49c645357e4cf",
+    x"12b4a4adc0a96192", x"e99dad1ede5682bd", x"c3049e19b05dc7e3", x"7005e5d56b80522f",
+    x"729addfbb2dbbea5", x"b2dea529366daf62", x"38e70409f79d603f", x"411634d709f62cab",
+    x"56a9122e1b3056bf", x"aa26f13962f5f83d", x"d07c3137cfe18862", x"b535c1b533178259",
+    x"da9afccc72e3580a", x"d9fa6e73379e55c0", x"b8ddb18101b48a64", x"2ecda7bc83067d83",
+    x"ff0a3f574b54ab4c", x"679a8a0e4cbe3d70", x"811b6a854be4e6d5", x"7e4b4510864ce3d0",
+    x"a7d620c1c1d5a0ae", x"823d3b917ec15301", x"d124f60778d7ba80", x"19aa60a978431798",
+    x"ac2f2f3bc8edd044", x"725fc61851ea1e3b", x"8f26073c8be1c71c", x"1cfcea5c8216e988",
+    x"f0d1bc79e500bbe2", x"19ebd163ba43d89d", x"1b764256fb9dfd0f", x"5e577766c51d1d57",
+    x"c3074be6149c971c", x"d9a60f3948e60496", x"6aa45c89c5e2232f", x"bb5536ca274857fb",
+    x"952f760bfefdb7f8", x"118825ac289ab65d", x"18a103bff6081072", x"b07bb9df90277d71",
+    x"8e3a20aa1cae86c8", x"69a30a3ada54ae90", x"10581482aeff8bff", x"a64d92cd65e5eeb3",
+    x"26d806dff95a7d5e", x"e254b93f566f6b4e", x"1e198e753106afb2", x"28b790bc8b67ef6d",
+    x"3c62e064f974d622", x"1c2bc87d09c17888", x"8f5392ee682675e0", x"d8c99ac1160cb5aa",
+    x"698c1bb3d17b6e62", x"ff2320d499c9254a", x"76ab33fec690e821", x"6f984f3184c1d8b9",
+    x"129c2479570579d0", x"581aaa5c7622ef36", x"2d2c168f54763e40", x"0ace910276ae1eb9",
+    x"ff0e9d3416c11b74", x"0048a840899a2192", x"dabf29bd4d9a552e", x"7a190e859a237eef",
+    x"e3363a36b7f3adf9", x"5b0f79d2760413c1", x"7bf530fffa559c4c", x"31d69479d1734e74",
+    x"42a7aa8ba69cb835", x"e8d18e02fc88020f", x"93b7039f7d97e82e", x"fdcd4c3cdb933b49",
+    x"3018568b0cac7391", x"7a656c952291b909", x"266d79c2141457ff", x"e8218d260f77adfc",
+    x"df28969ff52ed7af", x"edbafba4b849668b", x"d8e6db310528be49", x"d73b2c87c54776ca",
+    x"8273619189afdbc5", x"80dc1f8d3a505b27", x"d6b4f3a1e17fbfb3", x"1f4842673ea3c300",
+    x"5a7c599611309ed0", x"8fcb035a2400c5de", x"6834d321caae8ed8", x"0a27b86bec0d0ef0",
+    x"000000000000000b"
+  );
+
+  constant EXPA : word_matrix := (
+    (
+      x"05a1ba0edd026fbf", x"a770377044896e9a", x"e955b2e0f9da9644", x"b98f1bc677b51678",
+      x"052c67dba8113d9f", x"65c554c3704b48af", x"31083c090b0dae18", x"478835d8bf4b13f1",
+      x"7664e29a747180f1", x"56fba34c4a302cdd", x"81737640b0cad421", x"3f0bba0baa33449b",
+      x"098fefb87215ff9d", x"e5ac46129983cc38", x"bc899f7c57842586", x"dd1ff976e01c3193",
+      x"5d5fdfb819c652b9", x"6f7149e37b6615d4", x"bf28c8e6abaa1ef9", x"aa9fc9f503e452df",
+      x"ccace2f3c86fc355", x"3ef38feec07494c3", x"03eb4bc1195ae10e", x"1060a5b45c85141e",
+      x"8d7343a08620a4a7", x"3c701f958c35df0f", x"890ba352aa198b48", x"59745d9d636d174c",
+      x"883aa79bb59b7b72", x"54c56f4a2d3860e5", x"9b8ff8b80d8ae024", x"0d25064cc99e80f5",
+      x"26051904cc25fabd", x"ef10933de346c403", x"99c383c6b8980404", x"bd7b5f26bf9b56c7",
+      x"c12ec6dc51857d58", x"73863db796e947f1", x"7f636c03e2fef474", x"cb698abe1bb8b968",
+      x"8716fd79a5fcf619", x"de7107b2b49c94ef", x"97ba68ddcc5184eb", x"d2091bbeecdcd5ce",
+      x"b55432a7775e2615", x"ae0857d089ae2bed", x"d5799f4d6670e198", x"8d5ac68a0001fa93",
+      x"4a24c1d637136674", x"5cfed477d8754a27", x"633286a0f1b88bb3", x"e5ae82b035f29f09",
+      x"5f38064ba57e105a", x"1025d8ed32266656", x"21e3e59987a0559a", x"daf194f2eb2f860e",
+      x"cc68d0b887582684", x"d960082bd1281e96", x"bb4f8885d28c4d63", x"27255902b293b681",
+      x"69f012c08fa6e6e6", x"41663e6d6585ae47", x"92de0d5ba9bdef40", x"c43e6d38eed80253",
+      x"c5350e979981d848", x"83b87cef62d9c6cf", x"ee7fcea55a5048c2", x"940900cd66789fd8",
+      x"3f49b8b012eac728", x"f408684ed44a8021", x"353cf3e71c91e427", x"528354c3340399d3",
+      x"47af24185e9c3110", x"c85b3c1476736f1d", x"5c3a9b90383d541f", x"008fd44cf9ca90b7",
+      x"0d71dbec4ac44e57", x"b65181af83ef6b3e", x"05d70906529d66cd", x"edd446d6e77a59c6",
+      x"bfaf9e950e0adbab", x"14a4bfd086413ebb", x"e955a39e1827d939", x"c03fb8b82d0fc686",
+      x"636c75ed52058286", x"84ef01e48c957bbb", x"6da5034440e6d6c7", x"03d627d774bbd707",
+      x"6091a7ce4234dca4", x"1a40ba2832dffbf5", x"0e5475b6325e3ec2", x"ebc576cd07115c19",
+      x"b5e874d5c5b16a89", x"ac5a134bd3247e96", x"dccaa6eaf61dcef5", x"834b6821c561f59e",
+      x"c1915035bcddb0e5", x"6702afb8ad5259c1", x"1d0708710c4fd0a7", x"ae55de1743d91fcd",
+      x"a0782f7aec859dbd", x"a4ae6471f0767f0c", x"83d750592d3360fe", x"6b14d1a5350eed8f",
+      x"fed89c3bbca2924a", x"56f8bc850a07853f", x"d2f08bb15fa52912", x"8fa01e8a3c0ef4c0",
+      x"d1084920b7d4142a", x"8d18620566430533", x"52c1568509f8e625", x"934f8d5f0d9ecbf5",
+      x"84f7af46992f7bfe", x"831e6d8fc7499e7b", x"e403eb2393aeaffe", x"5b8a533f9852ad83",
+      x"fc78613ad2b9a701", x"287b1eb6ddf88852", x"56051ad74b97554a", x"8ae241232fd7e80a",
+      x"4f520572a2d20970", x"d9be552caddbf744", x"bd480b9c6bd5b9e8", x"bbc35e8ce1e0d94b",
+      x"b6f7c3c48a7ed61b", x"83811a2e1105521e", x"bb0366d6bf60b7af", x"0799ca47879ecf54",
+      x"6598a7251a58a901", x"dc58098bbcc23a3f", x"4b84b0ae92ebdeb3", x"e9795ca8e9001f1d",
+      x"32b157db7fb427c1", x"cd7d34756608f1db", x"d0b1483eccc1e26e", x"754147f6b6e9b19a",
+      x"cf5aa16ceaa4503d", x"8964c336af57af1c", x"7cee79361344814f", x"64dda1dff0085428",
+      x"ba5ae496a192f582", x"c685db287d55a407", x"653b35d8fde830f0", x"f4e7f2c7b46902d5",
+      x"1c655364144463c9", x"2f6705ae44d12bfe", x"43c9de4b806650ee", x"a169818b2f8c518b",
+      x"77f36543d06b8816", x"f184e565c45d7790", x"1b045059c89c8ce9", x"de408d1a778e655c",
+      x"c4fdc11f4b4fa218", x"a5a62014b9c9fd02", x"c1c79c2a459aca06", x"a5bad549e575b157",
+      x"f65ca0e2e914965c", x"5dfdf374e6105621", x"12ee1425ac5bf6ab", x"e56d61b1aac5b00c",
+      x"c8482b313e06174b", x"28241ee4545ac026", x"2adc248f28b04f79", x"75d32b4a0445c427",
+      x"860761a2b57f017f", x"39fd4716f8e3d770", x"72d7fbb082e0acdd", x"640780747c32c2bb",
+      x"842719a6a015d765", x"e3145996ee304ab1", x"aedcc92cc7e08b65", x"d5550dafb83bd196",
+      x"db0a86594b70589a", x"c60f98544ac24187", x"1df67346b7fa6223", x"ae432f851ad046a3",
+      x"10498108c96a9a5c", x"b25f2a6bc74235ad", x"879fbcc77c28680c", x"3d6e9bcad643fcaa",
+      x"e5738ed11f68cd90", x"4ff3df2aaf181a69", x"9c6e8dc4a24e4f79", x"747c1d5c12625f31",
+      x"a1edee17a7371bc2", x"984f9c5ed7f1f709", x"5c3d37ae61ea95e5", x"a389fb58d2a68367",
+      x"971b93dd0cad0ae1", x"7dc65969a333ccb8", x"f48dd3ca4945d9cb", x"ec8f9d394434e03d",
+      x"550306ca9ec5f25a", x"ebf2c074ada7960a", x"3737af5fdec5525d", x"e6b9511ad8a712e5",
+      x"0b975c1e093db383", x"264a1e35c6a00c89", x"ab30c1b02206c38d", x"f0a66b0256a1b267",
+      x"bd95585534d17c81", x"e987e41d212c637f", x"5815d64ed6c91d45", x"ed0c400cec9422bb",
+      x"8c5659d9d002b5c9", x"9be2ab1671f0f3d7", x"b5937034c04dfb62", x"7647d7bb4b3a47b4",
+      x"d1ecc2c08362e4bc", x"f7efb76a8e33603e", x"3ad556adcd640f6e", x"b89774b5887f1c0b",
+      x"f145ec497c83e534", x"6d68c3f967ab6c91", x"9fe2880e4a977af7", x"afa9f3743df12f35",
+      x"187a4eaae0df4977", x"4aa89a2f166c099b", x"eb62fa6f52c1a311", x"fe3ad9fde1cf2227",
+      x"ff372fe1e57cef5d", x"235be2e78494921c", x"7212803d63472ab2", x"7139f6b9cfe6a8b8",
+      x"94f422e679a665e6", x"510cc85cf46334c0", x"12afad578700bc30", x"6a2cc1e664998a61",
+      x"033bf0fb3005cb13", x"3291231d1dfb820f", x"bc99d105539eb666", x"7e28a15c877626b3",
+      x"628314a46a97ac1e", x"abd16cbce5cbf9bc", x"93d87211ffa17752", x"83d5e80f05e47c31",
+      x"88547c7698d5bf0b", x"ec23440d60195426", x"9deaf1d69cc9a7f5", x"b79f6d9bd4fcdd1f",
+      x"5577e2ce73ab4e8c", x"2364de9c520a6ee6", x"3986de60513fc1b4", x"2caaa4f9e3bc2dae",
+      x"637567ca74675fcb", x"87182be4ae7bc06f", x"6c1040ff5ed6bb1c", x"6e5126d2396bb69c",
+      x"7008841dfd92ec2a", x"db7e5bfb9586dbe2", x"13d57a94791fb88e", x"53de3f945068e020",
+      x"13cb406a75faa27f", x"95e78b49f03904c3", x"2ea329dd0b2835c8", x"16fa4ed5031cbcbb",
+      x"69c25cadecc3c41e", x"0df6e8855ccc41c3", x"5ee9a6cd2ab2d349", x"4b5e09a13c57a422",
+      x"f6ae116a495e5959", x"96701c9b54544a48", x"8b04c54eafaae297", x"ace527daa1bb6e12",
+      x"115cf2b204aac44e", x"7022602e44cf8f45", x"45b23593f13ae0fe", x"eb6b9add5d59b993",
+      x"4622615dd8922a64", x"3f5f5600f598a119", x"103ae9d36a2e704d", x"2a3262a70bcc9c7a",
+      x"8e41c628218e576d", x"1e00947f16b13387", x"99520a94ff262a21", x"1868b91baae71bd3",
+      x"0000000000000007"
+    ),
+    (
+      x"05a1ba0edd026fbf", x"a770377044896e9a", x"e955b2e0f9da9644", x"b98f1bc677b51678",
+      x"052c67dba8113d9f", x"65c554c3704b48af", x"31083c090b0dae18", x"478835d8bf4b13f1",
+      x"7664e29a747180f1", x"56fba34c4a302cdd", x"81737640b0cad421", x"3f0bba0baa33449b",
+      x"098fefb87215ff9d", x"e5ac46129983cc38", x"bc899f7c57842586", x"dd1ff976e01c3193",
+      x"5d5fdfb819c652b9", x"6f7149e37b6615d4", x"bf28c8e6abaa1ef9", x"aa9fc9f503e452df",
+      x"ccace2f3c86fc355", x"3ef38feec07494c3", x"03eb4bc1195ae10e", x"1060a5b45c85141e",
+      x"8d7343a08620a4a7", x"3c701f958c35df0f", x"890ba352aa198b48", x"59745d9d636d174c",
+      x"883aa79bb59b7b72", x"54c56f4a2d3860e5", x"9b8ff8b80d8ae024", x"0d25064cc99e80f5",
+      x"26051904cc25fabd", x"ef10933de346c403", x"99c383c6b8980404", x"bd7b5f26bf9b56c7",
+      x"c12ec6dc51857d58", x"73863db796e947f1", x"7f636c03e2fef474", x"cb698abe1bb8b968",
+      x"8716fd79a5fcf619", x"de7107b2b49c94ef", x"97ba68ddcc5184eb", x"d2091bbeecdcd5ce",
+      x"b55432a7775e2615", x"ae0857d089ae2bed", x"d5799f4d6670e198", x"8d5ac68a0001fa93",
+      x"4a24c1d637136674", x"5cfed477d8754a27", x"633286a0f1b88bb3", x"e5ae82b035f29f09",
+      x"5f38064ba57e105a", x"1025d8ed32266656", x"21e3e59987a0559a", x"daf194f2eb2f860e",
+      x"cc68d0b887582684", x"d960082bd1281e96", x"bb4f8885d28c4d63", x"27255902b293b681",
+      x"69f012c08fa6e6e6", x"41663e6d6585ae47", x"92de0d5ba9bdef40", x"c43e6d38eed80253",
+      x"c5350e979981d848", x"83b87cef62d9c6cf", x"ee7fcea55a5048c2", x"940900cd66789fd8",
+      x"3f49b8b012eac728", x"f408684ed44a8021", x"353cf3e71c91e427", x"528354c3340399d3",
+      x"47af24185e9c3110", x"c85b3c1476736f1d", x"5c3a9b90383d541f", x"008fd44cf9ca90b7",
+      x"0d71dbec4ac44e57", x"b65181af83ef6b3e", x"05d70906529d66cd", x"edd446d6e77a59c6",
+      x"bfaf9e950e0adbab", x"14a4bfd086413ebb", x"e955a39e1827d939", x"c03fb8b82d0fc686",
+      x"636c75ed52058286", x"84ef01e48c957bbb", x"6da5034440e6d6c7", x"03d627d774bbd707",
+      x"6091a7ce4234dca4", x"1a40ba2832dffbf5", x"0e5475b6325e3ec2", x"ebc576cd07115c19",
+      x"b5e874d5c5b16a89", x"ac5a134bd3247e96", x"dccaa6eaf61dcef5", x"834b6821c561f59e",
+      x"c1915035bcddb0e5", x"6702afb8ad5259c1", x"1d0708710c4fd0a7", x"ae55de1743d91fcd",
+      x"a0782f7aec859dbd", x"a4ae6471f0767f0c", x"83d750592d3360fe", x"6b14d1a5350eed8f",
+      x"fed89c3bbca2924a", x"56f8bc850a07853f", x"d2f08bb15fa52912", x"8fa01e8a3c0ef4c0",
+      x"d1084920b7d4142a", x"8d18620566430533", x"52c1568509f8e625", x"934f8d5f0d9ecbf5",
+      x"84f7af46992f7bfe", x"831e6d8fc7499e7b", x"e403eb2393aeaffe", x"5b8a533f9852ad83",
+      x"fc78613ad2b9a701", x"287b1eb6ddf88852", x"56051ad74b97554a", x"8ae241232fd7e80a",
+      x"4f520572a2d20970", x"d9be552caddbf744", x"bd480b9c6bd5b9e8", x"bbc35e8ce1e0d94b",
+      x"b6f7c3c48a7ed61b", x"83811a2e1105521e", x"bb0366d6bf60b7af", x"0799ca47879ecf54",
+      x"6598a7251a58a901", x"dc58098bbcc23a3f", x"4b84b0ae92ebdeb3", x"e9795ca8e9001f1d",
+      x"32b157db7fb427c1", x"cd7d34756608f1db", x"d0b1483eccc1e26e", x"754147f6b6e9b19a",
+      x"cf5aa16ceaa4503d", x"8964c336af57af1c", x"7cee79361344814f", x"64dda1dff0085428",
+      x"ba5ae496a192f582", x"c685db287d55a407", x"653b35d8fde830f0", x"f4e7f2c7b46902d5",
+      x"1c655364144463c9", x"2f6705ae44d12bfe", x"43c9de4b806650ee", x"a169818b2f8c518b",
+      x"77f36543d06b8816", x"f184e565c45d7790", x"1b045059c89c8ce9", x"de408d1a778e655c",
+      x"c4fdc11f4b4fa218", x"a5a62014b9c9fd02", x"c1c79c2a459aca06", x"a5bad549e575b157",
+      x"f65ca0e2e914965c", x"5dfdf374e6105621", x"12ee1425ac5bf6ab", x"e56d61b1aac5b00c",
+      x"c8482b313e06174b", x"28241ee4545ac026", x"2adc248f28b04f79", x"75d32b4a0445c427",
+      x"860761a2b57f017f", x"39fd4716f8e3d770", x"72d7fbb082e0acdd", x"640780747c32c2bb",
+      x"842719a6a015d765", x"e3145996ee304ab1", x"aedcc92cc7e08b65", x"d5550dafb83bd196",
+      x"db0a86594b70589a", x"c60f98544ac24187", x"1df67346b7fa6223", x"ae432f851ad046a3",
+      x"10498108c96a9a5c", x"b25f2a6bc74235ad", x"879fbcc77c28680c", x"3d6e9bcad643fcaa",
+      x"e5738ed11f68cd90", x"4ff3df2aaf181a69", x"9c6e8dc4a24e4f79", x"747c1d5c12625f31",
+      x"a1edee17a7371bc2", x"984f9c5ed7f1f709", x"5c3d37ae61ea95e5", x"a389fb58d2a68367",
+      x"971b93dd0cad0ae1", x"7dc65969a333ccb8", x"f48dd3ca4945d9cb", x"ec8f9d394434e03d",
+      x"550306ca9ec5f25a", x"ebf2c074ada7960a", x"3737af5fdec5525d", x"e6b9511ad8a712e5",
+      x"0b975c1e093db383", x"264a1e35c6a00c89", x"ab30c1b02206c38d", x"f0a66b0256a1b267",
+      x"bd95585534d17c81", x"e987e41d212c637f", x"5815d64ed6c91d45", x"ed0c400cec9422bb",
+      x"8c5659d9d002b5c9", x"9be2ab1671f0f3d7", x"b5937034c04dfb62", x"7647d7bb4b3a47b4",
+      x"d1ecc2c08362e4bc", x"f7efb76a8e33603e", x"3ad556adcd640f6e", x"b89774b5887f1c0b",
+      x"f145ec497c83e534", x"6d68c3f967ab6c91", x"9fe2880e4a977af7", x"afa9f3743df12f35",
+      x"187a4eaae0df4977", x"4aa89a2f166c099b", x"eb62fa6f52c1a311", x"fe3ad9fde1cf2227",
+      x"ff372fe1e57cef5d", x"235be2e78494921c", x"7212803d63472ab2", x"7139f6b9cfe6a8b8",
+      x"94f422e679a665e6", x"510cc85cf46334c0", x"12afad578700bc30", x"6a2cc1e664998a61",
+      x"033bf0fb3005cb13", x"3291231d1dfb820f", x"bc99d105539eb666", x"7e28a15c877626b3",
+      x"628314a46a97ac1e", x"abd16cbce5cbf9bc", x"93d87211ffa17752", x"83d5e80f05e47c31",
+      x"88547c7698d5bf0b", x"ec23440d60195426", x"9deaf1d69cc9a7f5", x"b79f6d9bd4fcdd1f",
+      x"5577e2ce73ab4e8c", x"2364de9c520a6ee6", x"3986de60513fc1b4", x"2caaa4f9e3bc2dae",
+      x"637567ca74675fcb", x"87182be4ae7bc06f", x"6c1040ff5ed6bb1c", x"6e5126d2396bb69c",
+      x"7008841dfd92ec2a", x"db7e5bfb9586dbe2", x"13d57a94791fb88e", x"53de3f945068e020",
+      x"13cb406a75faa27f", x"95e78b49f03904c3", x"2ea329dd0b2835c8", x"16fa4ed5031cbcbb",
+      x"69c25cadecc3c41e", x"0df6e8855ccc41c3", x"5ee9a6cd2ab2d349", x"4b5e09a13c57a422",
+      x"f6ae116a495e5959", x"96701c9b54544a48", x"8b04c54eafaae297", x"ace527daa1bb6e12",
+      x"115cf2b204aac44e", x"7022602e44cf8f45", x"45b23593f13ae0fe", x"eb6b9add5d59b993",
+      x"4622615dd8922a64", x"3f5f5600f598a119", x"103ae9d36a2e704d", x"2a3262a70bcc9c7a",
+      x"8e41c628218e576d", x"1e00947f16b13387", x"99520a94ff262a21", x"1868b91baae71bd3",
+      x"0000000000000007"
+    ),
+    (
+      x"ee737c67225588c2", x"c8bba46bb1788add", x"decf9c15ecfdde4e", x"6dcb3608981781b4",
+      x"a3f2eb54801fb797", x"9029cfb5dce5a3ea", x"74e1b7175192c5a5", x"703ee3af43e212e3",
+      x"0c3b37ea209a078e", x"b57d14c726b5638b", x"97a0e74e7f9f8e4b", x"d9edde7a222a99a1",
+      x"f8737b005b8cfc0e", x"95aa6e6e57915026", x"5ac95ab6a12e921c", x"cd31132e0bcb0461",
+      x"5c8e61c41d570f2d", x"c6ded23f67660e58", x"166c13f4d47d4a02", x"2e538020d700e571",
+      x"b77227bb3f0c3bff", x"c2e30be985576df5", x"10a92daf5393e934", x"624a06f7e479ad64",
+      x"490a485ed439c36c", x"12c18535ed5832ab", x"98723775db2ebb7d", x"8613eec79fb62b71",
+      x"10c683e6ef370ca3", x"dba0f746358fa54c", x"02135ef83d8e2e62", x"6d5ebea48bbd502c",
+      x"c91f54e7b4ffc31d", x"4c185e6aa44501c5", x"1b409e3fbf5792e6", x"9038688eebc07f9a",
+      x"f4d70417c8a09ab9", x"4dfd3188e4b83148", x"3161200552b98785", x"fc3a87d6877fb667",
+      x"fbe4aba603ee808d", x"39d24267f91d316d", x"472563ac67098a93", x"549a36eeb36028a2",
+      x"8103cc2bd7a2f136", x"dc2b0cd0954bde13", x"5303cf42dbe530ad", x"ca9b4ea95c4987f3",
+      x"2d0a3161332b123d", x"9534b908d992f869", x"7109c691b965b0e7", x"8c94c6b43693f28a",
+      x"8af845965777a375", x"81a38f3bc8a7c9c1", x"8be2b5fedfad54a0", x"7b3bce0c46fe9bb8",
+      x"a2f1fa6f4e26a079", x"10741df286fc94dd", x"d7f488d59a33ff0a", x"7d9ac478cff859de",
+      x"d51a3acca9e1aa6c", x"fc97c8483fdf5d9a", x"542a0dd30f356528", x"a0897312fd90092e",
+      x"b47a1dc934e01860", x"bd527e39c562a57f", x"fa5d85c7d3a753db", x"35d6ca30b3511b44",
+      x"600f7f4ccdecc57f", x"c42274c0749be0f1", x"601656dd5a896d2c", x"87c39822e9c21a79",
+      x"f72bfb83e70f9702", x"5f1f63af8e0dd54e", x"4e7ba73b7ab74537", x"c479a53ad7518f72",
+      x"c25f0cf3b0dd7b82", x"8728e2f5d739f277", x"d008703d0eb76913", x"bdb13ce5788e95a4",
+      x"a215990558fae252", x"782b6f09d70e97fd", x"54840a7046070bf1", x"7127a1ae12ed3d5e",
+      x"c84ceda255f95f4f", x"8d3ef4c662566963", x"151f5a3383f218ef", x"37f941f00d2e0899",
+      x"dca2054c790518c5", x"3a4a258d9fd0b708", x"01aafd22c9f5bcc3", x"3aa22279c05db659",
+      x"c55f3beb2ef4a3a0", x"d08f586beb36447e", x"015d20067e9cce9b", x"03bdc93a621ee393",
+      x"6dd1fa75c94518c7", x"b1f4c5fc7be8b82c", x"eea5308dd4e8e963", x"b37391dba32d94d8",
+      x"9dc5dfb4fb2e6d2b", x"532907b31772e1bd", x"5a75be7e41c2fac8", x"7a2fd663ad322e91",
+      x"f9dcbef84c4d3f0a", x"013e858d847a8ebe", x"d8c941d04d05bae6", x"a40a28647920bf0f",
+      x"05c058ee82f71c86", x"13a4a6ae06ae6327", x"0ff6677e9b1aa719", x"6c3f3b6af0108b03",
+      x"a5c3d047da6696d0", x"05481836aea4222e", x"c19f2fda541953f3", x"e2459581ddce0877",
+      x"892deac39646b95d", x"0d710dc10e9809b9", x"c3aa7079822076ab", x"95d5efb185839fa4",
+      x"1a6d77a164f765aa", x"47065e27f81b8a23", x"e036e253ddb83d3b", x"e626f1b5677e1356",
+      x"f0f1962bf83e34cb", x"55f3e4545b21380e", x"e47c0454ffefd6e1", x"d391b3deca4bc6de",
+      x"c296411197e99cb3", x"ee908ef93cd19a2f", x"f653849d2dfa50f3", x"59fa3663319e268f",
+      x"5ccc0e40970ba322", x"864473cd68d9cdd6", x"f3a65f345ae873b8", x"24d128adfd91b301",
+      x"399a2f09c7c34dde", x"a3c627e52413ba5d", x"81e70453af928df2", x"304ea4201f2abb83",
+      x"814797bab3568af3", x"d8045cf66d0cbf87", x"98f3c47ef0e22eb8", x"4f6852f4f760f07d",
+      x"4c3209eb44cac6ef", x"09d88ee54407556e", x"bb263bceb177b284", x"86472a55369f1640",
+      x"dca0c6fc7ffbf875", x"5c1bb86fc2b58646", x"54ec96ddbe2f5ef6", x"a91115f6f7dacaf6",
+      x"f62a80838ad4dc6a", x"0a2dfa4ddc7e96a5", x"4acb7e1260dad4c6", x"3686b707eee19ba7",
+      x"5042448a3bfcfccb", x"c74e8014c88fffb3", x"16a0051dd012ff8d", x"fcbdcc8b240bff62",
+      x"3eead1c751481c43", x"fe01067e308fe43a", x"6225277831956e0e", x"3dd4924acf8e9a71",
+      x"d4ac617fa13feffb", x"48e1b400e0bfc38b", x"6bb4d9abefd0ca1a", x"291fea4060b2fdbf",
+      x"32edf8a8be63a093", x"a42ed1ab2ebf407e", x"7d2c42b8a3f45843", x"14708b7716699af6",
+      x"ded3fc35e937575b", x"ae42400564e8af2f", x"d45b4424cec91000", x"bf09e254328f4fa2",
+      x"1b89a4a99d1e4957", x"7b59e09aa63efd8a", x"264e862599358bb9", x"8cfd9ca504183e11",
+      x"852953e0f2555df7", x"74cd079adf1b65e6", x"cb039e2229f5c8d8", x"f014aeebc5966150",
+      x"79a0de8323f5e9e1", x"407579e972d61630", x"80150539ad877260", x"535c35357eb40441",
+      x"56cc1884de697f2c", x"07a0871bc3f418b6", x"eb0d9d5e478cb86c", x"00084ca632951f5a",
+      x"43c302ad505dc607", x"fe75cedfca99726a", x"22c9b6b2d2f29578", x"f9e24b711c0c56cf",
+      x"b7bd2f11b5c137db", x"9c8cbee131010cc5", x"5f28ea83000affe3", x"cf38ad07491b3767",
+      x"72915dfabca39632", x"740d3cd09ce9f497", x"72ca7ab6522d7e27", x"a1bc03cde6851fc5",
+      x"f464ea8ac6d7c3da", x"f5e462f615dbbb5a", x"ef216e7458407e97", x"4ed38482006edf3b",
+      x"0ffc349f37458820", x"47169dacb44b33e9", x"484b5b058fce6252", x"1d7185453b59dfdb",
+      x"15abdbad01328de1", x"b51788b1c7933ad5", x"e14a21ede7419387", x"86c75ffecee6f325",
+      x"1b9e236d095e0ee4", x"938e09626530290f", x"916db992c49719fa", x"ec61bdcd9b44bfbf",
+      x"8a7f50018a392ae6", x"994d1715ed6df45b", x"6af182bc60c5606e", x"aa6a09fd189faca2",
+      x"a2e42226334e5bed", x"1c57c7186ba1c85f", x"595a8eed4d11d778", x"b58fd0b42aa50917",
+      x"6a6eed77e067a827", x"c63e24e07e63507e", x"55a75c5adbb4cf93", x"17844deebab88a8d",
+      x"63bfb7a784def3df", x"b67449210e110c12", x"b7aa4bdbccb309a5", x"234d2a08d952a896",
+      x"104badfed612a710", x"1bfa2d31e3b76e5e", x"e5b081927ec40324", x"8030804203f51f11",
+      x"45b0a322b8c1d076", x"5d00773e31ff96a3", x"df5ddff203128d80", x"efb795cba4088a56",
+      x"d85b46dc3a920e8f", x"02a6836832f1ee50", x"a9d095c5ffa75987", x"450b9dabc169f6b6",
+      x"a18a5fe63cc17705", x"1243d644ef45b1c0", x"77855c544043d3c3", x"dfcb090a274bd892",
+      x"cc94cd9c07817b7d", x"36c2bcb0e52ba0d4", x"54e11663ec22ab99", x"80cefd8a61b7766d",
+      x"e07a5e8f15c820f8", x"58f626fe2091eb1d", x"36246689fe9312db", x"782303946dffc97e",
+      x"6a5f1366be81aaf2", x"1a0e157b1499d2a8", x"da4811e1dfeaa500", x"3798a6fb6d416209",
+      x"7ca1f7e86239ba68", x"b7646df92fd7dfda", x"4cd9569384e48b53", x"46127acb76fc8447",
+      x"584f21b2a0990acf", x"6335fd3d4875ec8a", x"06feb1072d0a6293", x"0a9575a41f67d576",
+      x"dac5e2cfef2b0bf6", x"7d9c0dab07a09245", x"a0f9cc93b73116a9", x"c7afb50dd6799c98",
+      x"000000000000000e"
+    ),
+    (
+      x"0190b2a151ce34b2", x"82113f4b8f7f8a6c", x"297e4f2a153a66e8", x"60202ff95cefa8fd",
+      x"260d719dcf6e2d4c", x"a5f94644440f133d", x"681d20b4b0eec614", x"34d17798b9f26f82",
+      x"6192f7038e805eda", x"8ec1ff268e86273e", x"23467b1c0b196ad0", x"db4ef27dd36593b3",
+      x"e6bbab2472719293", x"7e34f313572d5e51", x"8e1fe3de7ee73e86", x"f56d16963b55c10a",
+      x"7d646fe40972601e", x"ffb4ba1939e0ddf3", x"d6d5c56a2169e1dc", x"04e13c520c5177bb",
+      x"7424af7bcd678ccf", x"6b518a7c2b2e2aca", x"e27e48b00c9a7761", x"7774eb05d9a1cba4",
+      x"c15d4ec18131bd8f", x"7d9fa9819aba7150", x"9f5f037e69cc2c09", x"785588998e17a52a",
+      x"c181f4d76ce370dd", x"6e45e656df570253", x"0a741ecf5151a365", x"b4dbb35817ab0334",
+      x"afb557c5aa6ce8d1", x"70bb7b15afde362e", x"b7722463856376da", x"d1a021e1dd25954f",
+      x"92c700a55e57539a", x"420b8553a4a38401", x"a654a8b259c259f0", x"bbc2ab2efd0cc75e",
+      x"de8766e8e00e6305", x"4f376c17cf45d8fd", x"cf1b4096019d9d79", x"b2293eeb98b2cc1e",
+      x"3cab2c2a67cc8030", x"b24b1744c7387b4b", x"fd91b65402a2a079", x"2961f1c687f09b83",
+      x"f6e6143dbd4839bc", x"93d324dd4d3b5190", x"e176e65cac009a66", x"f339b643b2300826",
+      x"ef19283ce1928157", x"52e456aa04260d20", x"aa1aca0a3d9b0a0a", x"2855ea0da32263e4",
+      x"1a64ae73c1d3a1a4", x"ba0682b3f6f6fc30", x"ad6a55adbee82567", x"56ab1e681e5d9ca6",
+      x"0d6b182b5e93a541", x"22b7100b05567537", x"abcc419bd82c1781", x"57f2f89e93ea5cb1",
+      x"c4d947248fdf2d99", x"e81c28205b1c9beb", x"14a8c31c8a35ca75", x"ea9952d45f1c7474",
+      x"4b9a93c1cf51c91f", x"ddfa5065f5fe4d54", x"411354b273534d0a", x"eb2b5782d1646423",
+      x"010458049c3419dd", x"a0dade6c51dde79d", x"fed70ed4d0d92947", x"f2cadd53158ca1dc",
+      x"e3420af527399e86", x"7878bec061e3c294", x"730029c92b1c0b34", x"f46f5834493ce1d3",
+      x"3cba50a94c813d09", x"5763e1e28fcf4143", x"18173600e7dcd24a", x"66f0c1b74a0f84c9",
+      x"2a035095853cbd64", x"38ce8e61fb601ea6", x"1773129129e9d85b", x"00b0ff9063695676",
+      x"389ff7f3a1f795fb", x"65ed064d9b92e0cb", x"cf65da3abd7a21f6", x"3824bb9fc31b50bb",
+      x"a31a0da9b33b4a23", x"616b6c86ab135c20", x"35ced80f911fc5d8", x"18678bcd70b1e221",
+      x"67a398703ea5ac20", x"3aed41d47deba474", x"6f775baee5242209", x"e8940f561ac64b25",
+      x"daeacb25de064aec", x"6c772414c7b88b47", x"2dd138af5fd87521", x"9372f7b1ec85c5a1",
+      x"76baf21e4b414907", x"c8f1e87f17270bcd", x"3ce5c488146fc24a", x"ce1a7a40b160c1ec",
+      x"e8739c33e8cfb095", x"178955740a9b3481", x"a54d0170d7f42b58", x"f4eee38f617b7d94",
+      x"e3a6a5bd9e66cb4a", x"b0c4d72ee9a738f4", x"8dba03f21bee7fcc", x"49266dccaed5b9f1",
+      x"bc36c352b88172fc", x"972d485a1e125aa6", x"79ab42ae6feb0e0f", x"efe90e29851e4dcd",
+      x"97852ac62970e412", x"9efb1bf0ceecb8a6", x"a4add2bdaa0a605c", x"a3809a74a60a6e87",
+      x"19a95d28784fca3d", x"214c9be938133d2a", x"1321eff5da4cd0fb", x"409c9252384017cf",
+      x"2de4f69081f86b91", x"fab2d06559b8c4ad", x"426f8f8ade6b2308", x"6fc4d365b7fc5fdb",
+      x"1ca26a94849a5784", x"84857884e0898e1a", x"d87d8f00c6d28daf", x"89ffa931c35b4d9a",
+      x"7cadb3496cf5c164", x"ab5202724c663cec", x"1fc0e5eb348c3528", x"6ed59fb574f2e3b9",
+      x"f254a096b5106a68", x"adf0b0946b864e38", x"ec6806341c10adff", x"bac1ad018f0808af",
+      x"9ffb7a494b244366", x"345e6b9fd4c684bd", x"b12def045eb4bc28", x"7df1929972fc42f8",
+      x"620425a9863e6647", x"451e4fc5849a03cb", x"131a1e71b8a7c158", x"8bc7d263098a4af3",
+      x"7955f2bacdac968f", x"a011fdc6d05b6f11", x"36a07bd722c2645a", x"36e753100b064e5c",
+      x"e83e3d385bf7519a", x"867a987374ff5b12", x"429dd925efe2cb81", x"997902a9e36cc047",
+      x"399afdcfb00a27e1", x"d14a7a52941bdf90", x"7e31e4d3508af32f", x"902e22625e32bc5f",
+      x"48947d2f6750a1ef", x"7010804881182083", x"89287232fe6c683c", x"c77e70afbc54224e",
+      x"26cd067d63249f14", x"0528d9689ac0888e", x"97f5701b36ec3901", x"a401b1b59675f3e5",
+      x"ee6f64f5361739f6", x"29145eb3d7c76ea0", x"ae851b411dc3930c", x"6461f7c5b1cb820c",
+      x"1039ed77ea29fd8d", x"1c002037f788d950", x"942c813b3fa50924", x"402bc4a536f9efa1",
+      x"1d5692616b37cd2d", x"7d0e1f146ade0036", x"5f8d68558bde241a", x"8cc5df96378b1033",
+      x"cf150489006437a5", x"f46b4509076145f5", x"10ee63be469460a9", x"2733e7c1aba2777f",
+      x"39776fd9fada26a5", x"b80a1518da1ec1f8", x"8c09321dad1a4a41", x"f380bb5462218840",
+      x"3313c15e509c758e", x"3bc4f0d3b8f528c1", x"46518c82c9e34f49", x"56ef77e73f3d2592",
+      x"fe55fffadcf2b3ba", x"aa5500fb730473fc", x"bacdde8d41a6766f", x"8b4e7c24177460cc",
+      x"5fb76555bd8bd888", x"c987c41ed54fcab6", x"82f22238b5b91aea", x"4d946b8ebb5203b3",
+      x"74e9a09ff17ad9c7", x"013ab257b78f007f", x"19026f41b5dded6b", x"2c5b47a10ef7cdb2",
+      x"3379f5018663310b", x"827a1926cf8792dc", x"4ca3d82c1794c0c9", x"962a2824b79a9092",
+      x"6798eace719845a1", x"86382a90c812f03f", x"f94ae5456f2824a3", x"bdd0b4cc384b5d4f",
+      x"b933cb40c573f895", x"a1a23d7be9754030", x"9044dda3c0a33766", x"b19f2519f31f5cab",
+      x"9c4a31a5a0c1359c", x"4e760e8873066866", x"a2da2842da3b63db", x"d6ca05b4496928c1",
+      x"935d08d3f2cbc2f2", x"3853919e38ef9590", x"19d45e499dc3e0fb", x"b858a2b01c6a5a0f",
+      x"cc4f04ed7886749f", x"2ab947e6b13ef091", x"91693a899abfe9fa", x"81dae65c9f0e43f3",
+      x"76a3f69a60ba1a49", x"a5ef61cea050fa0e", x"21303a6a66c62a74", x"99f01931d1a1f53d",
+      x"7118d5bcb6ab0d5f", x"00f9af8aad47be4c", x"005c5388b9d7d591", x"f921dac56a0a31bc",
+      x"98aec52c1fa23a87", x"814c6ec71c333130", x"f7f9548dff191c27", x"6769fed0f78ff397",
+      x"5f631f1f4481a3bf", x"30ad4c1b746868fe", x"fca76035966a64dd", x"570f8b7a9dba6e46",
+      x"8ea8a9560bec0eb1", x"296171fb70defd41", x"1741454e496662e3", x"a6e00b784bf88b0b",
+      x"49b8ec957d120571", x"e63b468776449b4a", x"473682e11fff93ad", x"0061b293116a28ec",
+      x"2568bc46a98ff5a0", x"92c9597ac623f62d", x"d5a1d0b54d660d75", x"2688dacd4a09d6d9",
+      x"80a81d24f23a692a", x"dbc36030cc6b7d21", x"5bb615dae7e2bc81", x"f5ea02dbcbf9b3c9",
+      x"1cb18a9611d203a4", x"d21a9e547ee81aa0", x"b1547796f2b2c664", x"392fc3e2ae56510b",
+      x"aa0be58965c7d899", x"2dac5bf90039d42c", x"4b5230980f8f416f", x"52b2ebc0f6c1dde2",
+      x"86fe70a2f56a4daa", x"034bff35471d592c", x"316a6cbbe52ae550", x"57c6400ceee13125",
+      x"0000000000000011"
+    ),
+    (
+      x"e688d9ad7cba2a0e", x"5ec480a5fa4d0d1f", x"d0ef9c4a0b5ce2fd", x"2fedc02d5f3afd15",
+      x"752617b3d1efae39", x"f1aecaf9dc08e31a", x"65636d3ea7a47f65", x"ba02fd56a18d3250",
+      x"2fe483e9beab09b7", x"1cb9d9df733c2d99", x"1c750c80d54cdfc6", x"f28f4bfc3a56e2a4",
+      x"13749a946a244884", x"33aa8c739e8bf15d", x"66f7a45c7a5bbbc4", x"62c6d22bffdc67b5",
+      x"8ffb5dcf184e1093", x"78f8199a0a4f99d7", x"fb6ef60271125ecb", x"38899f4f2512a021",
+      x"36732c38473540ba", x"4e4637d06cdac901", x"6b57195d0961e1f4", x"16ef269967223f73",
+      x"4c18a22088284bbc", x"39f83b557c20d49f", x"649dea596cab524a", x"ccdc3c9f448209e4",
+      x"b3bdec5c9fa6b98d", x"f0f28bb91dedb9fd", x"ab739214412d422b", x"1340f7c883d36a98",
+      x"ecedd3334d999bd8", x"68bc3d53c1214475", x"1bb328e016fb7c88", x"efacfdba4282890d",
+      x"487298e33a4e4afb", x"4a8fd9f906c7c183", x"daa1693a5fc4e50d", x"7a1d4cc088f7f73a",
+      x"eb4c54ab7bc601e5", x"7e43cbb808959842", x"3437b8f9b95954df", x"20b28fffd87ae052",
+      x"1127fbdeb0b6a26b", x"ab562851eac41eef", x"cf3c87fb4d24e45d", x"652512294c0f429a",
+      x"5515e627c035f2c1", x"dbee15101d35cf45", x"30b26a52e92cfcd5", x"f65311fb5e540080",
+      x"b3f7e573f4a9adc8", x"798ae9b65fd9c3e0", x"3d9c5311bcd0ba7f", x"b4f2cf3967261a28",
+      x"b137e5febf32a082", x"0e9fb0fb7fdb3ce3", x"ce012172395f60c8", x"2761cf7580e9af18",
+      x"35355038f2aaedf2", x"552832042cbd16e5", x"c6d3a95395242879", x"dea4c186e40fe06f",
+      x"201b5d9ffe73e40d", x"08b63c37499cf82c", x"540453af6586e70e", x"30d4b2efe8ac221c",
+      x"bab2cd469baf956e", x"76474b10b65035a3", x"6505f444e1421734", x"1568e15623e67edb",
+      x"02c8177ce429535f", x"66d96d517a547871", x"dddd375cb535a359", x"00e4c3f99a8bfce1",
+      x"b2b5f4652a1171bd", x"8de75282d7ec19f1", x"e8d5c377e853b99f", x"1a49981bcdcb59d8",
+      x"14f4afcf91d0428b", x"a06240dadefb476f", x"9451bb1840795ade", x"6cd017b149435511",
+      x"74e1f080abbca13f", x"d5863bfa0556e08e", x"92795efe223d5987", x"914858b2739f459b",
+      x"634e734ce73cd799", x"b8e872ed7cbd4dc4", x"3b714a4f091e8e70", x"d88d648dee95613b",
+      x"3ff989202dd513df", x"1f174770fa7f9169", x"883f6159c7501140", x"e628a80f65bc81f3",
+      x"7baf3d2f6e865938", x"1a27b2bebc834e35", x"cb539450e90d8c15", x"680f51b375fe67e3",
+      x"5a2068fc68fe01f8", x"8fde3fc103fa15a6", x"f777fe24993bf105", x"e715cafeb8bcb360",
+      x"726a454ebcea8a98", x"c4bbb09ee8a5a515", x"16809ab0bc0b2380", x"3ec1a6a40bf8dfa6",
+      x"98383bbae415dca9", x"3b080f0327af0cb5", x"c1bfc7bef1da5500", x"c6e59c502fd838cf",
+      x"06575c8f12f43717", x"1470e945ef06525d", x"44622a2526457f01", x"26bd881b471849c1",
+      x"7479aa7574e56f7c", x"ee3d551b6ecfbe49", x"e979fa7dea8fc541", x"3dfe8a2cd1f6705a",
+      x"4d43a5fcb033f0e3", x"2e737b3a1770ed48", x"7a33dee1b7b8837f", x"3f1c35331b7c851c",
+      x"6cac7cb5ac320a0f", x"e0b1da833fee0e70", x"638309294d2940d1", x"944acf7a1c258ee3",
+      x"76f01bdd362c7478", x"2c4a36c601727fba", x"7a60619b6e8ad949", x"8342dda83dc34094",
+      x"cc02c9251ed3f93e", x"0fe00a14c1a20fc2", x"b729c905c8868eb2", x"109544b2bc1c806b",
+      x"fbc1af39440ce89d", x"47dd99683829b53f", x"358eb65e92c996b3", x"a4c0b82448a779eb",
+      x"f6cac9ce0c255455", x"9ee354f0457cb69b", x"59b8e22484a9c47d", x"d690bb2605a34935",
+      x"53156a91ee66dae4", x"7fec5319360fcb09", x"5f448e35b073809f", x"543ddd1eab67eb31",
+      x"4ac259c35e72f043", x"c82e5f29f744f509", x"ec7d7136d5854ebe", x"426447ff7897df6d",
+      x"4d6442cd7a7c0532", x"2ccd78eb5fc8eee6", x"1fad9400445756dc", x"bc0d2c6704be26f0",
+      x"a8fc12c043a8d3fc", x"3088d16ec2bb916e", x"44febe3d7471fc1e", x"aea5e73ff5864767",
+      x"2edf7d868a8b4585", x"392a3f50f0dc4878", x"480bd081dfab2e0d", x"7bf840e57c52be96",
+      x"5d1908e992d2d82e", x"fac154cb0d0904c5", x"21eddc214b3e2770", x"2127676046b2e2a6",
+      x"6de111e10f3c2e03", x"fc96915f5400b173", x"07ce4a90f21d20f5", x"dbb5c57b68fead31",
+      x"0dbf7af93544a5d5", x"7f4cf7b90e347f28", x"03f6993610377d2a", x"9101d1de831b8fc8",
+      x"e92e9d62165fc4f2", x"fd7dafb1fa84ed0b", x"e38c3916676e5ac8", x"d16bbd10b58e733f",
+      x"886df2d0745d21e9", x"99b6860096b424b0", x"7216c65dd0079788", x"3fe1ebde35c7cb24",
+      x"059b7f476abf2835", x"41c6dab0eab1704f", x"8d1f98f4405e899c", x"32ae3a11e766ae22",
+      x"873631cda0339047", x"53ba4d8525193f35", x"a081c504481a5eaf", x"6801ae59934018f2",
+      x"173b25ab48db4ace", x"48dace7389124d6f", x"742e81fc56ba6ff5", x"607909d97c56f233",
+      x"9933870d04881935", x"ccf128746f29abf5", x"a7ea0876a2afbc10", x"c989a0498886bf1b",
+      x"24c4d5dde8d09bfc", x"dbab12e8894519a0", x"b425b7bf8049c311", x"f2ddb14a3f7eea40",
+      x"d57cf5669c99cc9d", x"6ebb3cfd1dcaf597", x"3f84933e6351d126", x"151c9e783ee22f58",
+      x"4ea6f0205fa64fcd", x"3f0a74b86adf9880", x"d871d6fe9426b4c0", x"044cefcc6be086bb",
+      x"4df28d74a3d2581e", x"171aa1041853050b", x"c28efe8a3cafa17a", x"fa2a2ce5c0f92c43",
+      x"a827b5ebae7fcb50", x"8453586f4b1f5bc5", x"8496e0e6d4ba5582", x"e519696ede7a7a66",
+      x"df7e9caef9c5c685", x"a44efd7463d101c6", x"9331e5c3a1af0f72", x"349989230e9c1954",
+      x"b98d6903552a4954", x"f843f1b20c3b36e5", x"7bcf80b556fc07e8", x"37eb4ba547f16a68",
+      x"c2f4f03305cd3edc", x"93b0830b24e632c7", x"781bf9c0cd2abcaa", x"cee247226e51ad37",
+      x"0edbfedaab9b159a", x"d0e6347566ed6c9d", x"850442e9887ecd48", x"0c36b835c36ead6d",
+      x"0a10d011d469d90f", x"fa0ca3ea7c5f943c", x"c298b8d2ec0ee9af", x"2423bb207902364c",
+      x"13bdfb48a79492ef", x"aa8f70263ba38e63", x"6933775521382c0f", x"12bbe28841dfa434",
+      x"073a0e1466819458", x"1bfb331a16f0d289", x"727206c299e90ae0", x"fcdd387f16cd0534",
+      x"2a82c589f9207b69", x"001c33e03c44f047", x"5b3573b59dbb198d", x"6b047d3e44f0952d",
+      x"50890b0936a8b254", x"e4829458e901f8a0", x"14a9882aab19ba1d", x"77a6c61458689d16",
+      x"9f314cc34ec5cbf6", x"2c27bd00d5c3ff02", x"47497f456a46ac0d", x"aa5d9df5db47749c",
+      x"8804193c82321747", x"6b1192398f384b83", x"0eed945f06061955", x"ac0fbd8efd694daa",
+      x"5a8c393aa98d26b2", x"524b2b4e341c6ec3", x"242edb77818c351c", x"59748dc15e616923",
+      x"40e89047bc4d5b5e", x"4025fabd8b181b71", x"26c9d74faf954ab7", x"fa9c1f117530a080",
+      x"1b15e446f877c527", x"3d5c809b0e0021a5", x"13f627705ccd3d24", x"830eb41352027d28",
+      x"000000000000000c"
+    ),
+    (
+      x"cd11b35af974541c", x"bd89014bf49a1a3f", x"a1df389416b9c5fa", x"5fdb805abe75fa2b",
+      x"ea4c2f67a3df5c72", x"e35d95f3b811c634", x"cac6da7d4f48fecb", x"7405faad431a64a0",
+      x"5fc907d37d56136f", x"3973b3bee6785b32", x"38ea1901aa99bf8c", x"e51e97f874adc548",
+      x"26e93528d4489109", x"675518e73d17e2ba", x"cdef48b8f4b77788", x"c58da457ffb8cf6a",
+      x"1ff6bb9e309c2126", x"f1f03334149f33af", x"f6ddec04e224bd96", x"71133e9e4a254043",
+      x"6ce658708e6a8174", x"9c8c6fa0d9b59202", x"d6ae32ba12c3c3e8", x"2dde4d32ce447ee6",
+      x"9831444110509778", x"73f076aaf841a93e", x"c93bd4b2d956a494", x"99b8793e890413c8",
+      x"677bd8b93f4d731b", x"e1e517723bdb73fb", x"56e72428825a8457", x"2681ef9107a6d531",
+      x"d9dba6669b3337b0", x"d1787aa7824288eb", x"376651c02df6f910", x"df59fb748505121a",
+      x"90e531c6749c95f7", x"951fb3f20d8f8306", x"b542d274bf89ca1a", x"f43a998111efee75",
+      x"d698a956f78c03ca", x"fc879770112b3085", x"686f71f372b2a9be", x"41651fffb0f5c0a4",
+      x"224ff7bd616d44d6", x"56ac50a3d5883dde", x"9e790ff69a49c8bb", x"ca4a2452981e8535",
+      x"aa2bcc4f806be582", x"b7dc2a203a6b9e8a", x"6164d4a5d259f9ab", x"eca623f6bca80100",
+      x"67efcae7e9535b91", x"f315d36cbfb387c1", x"7b38a62379a174fe", x"69e59e72ce4c3450",
+      x"626fcbfd7e654105", x"1d3f61f6ffb679c7", x"9c0242e472bec190", x"4ec39eeb01d35e31",
+      x"6a6aa071e555dbe4", x"aa506408597a2dca", x"8da752a72a4850f2", x"bd49830dc81fc0df",
+      x"4036bb3ffce7c81b", x"116c786e9339f058", x"a808a75ecb0dce1c", x"61a965dfd1584438",
+      x"75659a8d375f2adc", x"ec8e96216ca06b47", x"ca0be889c2842e68", x"2ad1c2ac47ccfdb6",
+      x"05902ef9c852a6be", x"cdb2daa2f4a8f0e2", x"bbba6eb96a6b46b2", x"01c987f33517f9c3",
+      x"656be8ca5422e37a", x"1bcea505afd833e3", x"d1ab86efd0a7733f", x"349330379b96b3b1",
+      x"29e95f9f23a08516", x"40c481b5bdf68ede", x"28a3763080f2b5bd", x"d9a02f629286aa23",
+      x"e9c3e1015779427e", x"ab0c77f40aadc11c", x"24f2bdfc447ab30f", x"2290b164e73e8b37",
+      x"c69ce699ce79af33", x"71d0e5daf97a9b88", x"76e2949e123d1ce1", x"b11ac91bdd2ac276",
+      x"7ff312405baa27bf", x"3e2e8ee1f4ff22d2", x"107ec2b38ea02280", x"cc51501ecb7903e7",
+      x"f75e7a5edd0cb271", x"344f657d79069c6a", x"96a728a1d21b182a", x"d01ea366ebfccfc7",
+      x"b440d1f8d1fc03f0", x"1fbc7f8207f42b4c", x"eeeffc493277e20b", x"ce2b95fd717966c1",
+      x"e4d48a9d79d51531", x"8977613dd14b4a2a", x"2d01356178164701", x"7d834d4817f1bf4c",
+      x"30707775c82bb952", x"76101e064f5e196b", x"837f8f7de3b4aa00", x"8dcb38a05fb0719f",
+      x"0caeb91e25e86e2f", x"28e1d28bde0ca4ba", x"88c4544a4c8afe02", x"4d7b10368e309382",
+      x"e8f354eae9cadef8", x"dc7aaa36dd9f7c92", x"d2f3f4fbd51f8a83", x"7bfd1459a3ece0b5",
+      x"9a874bf96067e1c6", x"5ce6f6742ee1da90", x"f467bdc36f7106fe", x"7e386a6636f90a38",
+      x"d958f96b5864141e", x"c163b5067fdc1ce0", x"c70612529a5281a3", x"28959ef4384b1dc6",
+      x"ede037ba6c58e8f1", x"58946d8c02e4ff74", x"f4c0c336dd15b292", x"0685bb507b868128",
+      x"9805924a3da7f27d", x"1fc0142983441f85", x"6e53920b910d1d64", x"212a8965783900d7",
+      x"f7835e728819d13a", x"8fbb32d070536a7f", x"6b1d6cbd25932d66", x"49817048914ef3d6",
+      x"ed95939c184aa8ab", x"3dc6a9e08af96d37", x"b371c449095388fb", x"ad21764c0b46926a",
+      x"a62ad523dccdb5c9", x"ffd8a6326c1f9612", x"be891c6b60e7013e", x"a87bba3d56cfd662",
+      x"9584b386bce5e086", x"905cbe53ee89ea12", x"d8fae26dab0a9d7d", x"84c88ffef12fbedb",
+      x"9ac8859af4f80a64", x"599af1d6bf91ddcc", x"3f5b280088aeadb8", x"781a58ce097c4de0",
+      x"51f825808751a7f9", x"6111a2dd857722dd", x"89fd7c7ae8e3f83c", x"5d4bce7feb0c8ece",
+      x"5dbefb0d15168b0b", x"72547ea1e1b890f0", x"9017a103bf565c1a", x"f7f081caf8a57d2c",
+      x"ba3211d325a5b05c", x"f582a9961a12098a", x"43dbb842967c4ee1", x"424ecec08d65c54c",
+      x"dbc223c21e785c06", x"f92d22bea80162e6", x"0f9c9521e43a41eb", x"b76b8af6d1fd5a62",
+      x"1b7ef5f26a894bab", x"fe99ef721c68fe50", x"07ed326c206efa54", x"2203a3bd06371f90",
+      x"d25d3ac42cbf89e5", x"fafb5f63f509da17", x"c718722ccedcb591", x"a2d77a216b1ce67f",
+      x"10dbe5a0e8ba43d3", x"336d0c012d684961", x"e42d8cbba00f2f11", x"7fc3d7bc6b8f9648",
+      x"0b36fe8ed57e506a", x"838db561d562e09e", x"1a3f31e880bd1338", x"655c7423cecd5c45",
+      x"0e6c639b4067208e", x"a7749b0a4a327e6b", x"41038a089034bd5e", x"d0035cb3268031e5",
+      x"2e764b5691b6959c", x"91b59ce712249ade", x"e85d03f8ad74dfea", x"c0f213b2f8ade466",
+      x"32670e1a0910326a", x"99e250e8de5357eb", x"4fd410ed455f7821", x"93134093110d7e37",
+      x"4989abbbd1a137f9", x"b75625d1128a3340", x"684b6f7f00938623", x"e5bb62947efdd481",
+      x"aaf9eacd3933993b", x"dd7679fa3b95eb2f", x"7f09267cc6a3a24c", x"2a393cf07dc45eb0",
+      x"9d4de040bf4c9f9a", x"7e14e970d5bf3100", x"b0e3adfd284d6980", x"0899df98d7c10d77",
+      x"9be51ae947a4b03c", x"2e35420830a60a16", x"851dfd14795f42f4", x"f45459cb81f25887",
+      x"504f6bd75cff96a1", x"08a6b0de963eb78b", x"092dc1cda974ab05", x"ca32d2ddbcf4f4cd",
+      x"befd395df38b8d0b", x"489dfae8c7a2038d", x"2663cb87435e1ee5", x"693312461d3832a9",
+      x"731ad206aa5492a8", x"f087e36418766dcb", x"f79f016aadf80fd1", x"6fd6974a8fe2d4d0",
+      x"85e9e0660b9a7db8", x"2761061649cc658f", x"f037f3819a557955", x"9dc48e44dca35a6e",
+      x"1db7fdb557362b35", x"a1cc68eacddad93a", x"0a0885d310fd9a91", x"186d706b86dd5adb",
+      x"1421a023a8d3b21e", x"f41947d4f8bf2878", x"853171a5d81dd35f", x"48477640f2046c99",
+      x"277bf6914f2925de", x"551ee04c77471cc6", x"d266eeaa4270581f", x"2577c51083bf4868",
+      x"0e741c28cd0328b0", x"37f666342de1a512", x"e4e40d8533d215c0", x"f9ba70fe2d9a0a68",
+      x"55058b13f240f6d3", x"003867c07889e08e", x"b66ae76b3b76331a", x"d608fa7c89e12a5a",
+      x"a11216126d5164a8", x"c90528b1d203f140", x"295310555633743b", x"ef4d8c28b0d13a2c",
+      x"3e6299869d8b97ec", x"584f7a01ab87fe05", x"8e92fe8ad48d581a", x"54bb3bebb68ee938",
+      x"1008327904642e8f", x"d62324731e709707", x"1ddb28be0c0c32aa", x"581f7b1dfad29b54",
+      x"b5187275531a4d65", x"a496569c6838dd86", x"485db6ef03186a38", x"b2e91b82bcc2d246",
+      x"81d1208f789ab6bc", x"804bf57b163036e2", x"4d93ae9f5f2a956e", x"f5383e22ea614100",
+      x"362bc88df0ef8a4f", x"7ab901361c00434a", x"27ec4ee0b99a7a48", x"061d6826a404fa50",
+      x"0000000000000019"
+    )
+  );
+  constant EXPB : word_matrix := (
+    (
+      x"0ee2ce136706b0c1", x"e9905990cd9bb3ae", x"3bfed7210a6fbacd", x"ca912c4a98df3a89",
+      x"0f74a86cf83346a0", x"ae4ffd4590ddd9f1", x"5318441b1d16f228", x"c8985e69c1dd3413",
+      x"9aad27ae9c928113", x"fb0ce5d4de507567", x"93959ad1d15f7c63", x"411cce1cfe55cdac",
+      x"1a9030e8963e00a7", x"2ef4ca37aaa45448", x"cd9aa184f88c6e8b", x"67200b9b202452b4",
+      x"e7e060c82a4af7ca", x"b193da258daa3e7c", x"c179592bfcfe230b", x"ffa05a1f042cf760",
+      x"55f5271458b045fe", x"43149033609dbdc4", x"043ddc432bef2312", x"30a1eedce58f3ca2",
+      x"9795c4e18a61ede9", x"449020be947e6110", x"9b1ce5f7fe2a9dd8", x"eb9ce6a7a5b739d5",
+      x"984fe8acdead8996", x"bd4fb1de7748a12e", x"ac9009c8169f206c", x"176f0ad55aa3811e",
+      x"6a0f2b0d546e0fc7", x"3131b54625cb4c05", x"aac4844bc9a80c0d", x"c78de16bc0edfb48",
+      x"43734b64f28f87e9", x"948a46d8bb3bc812", x"81a5b40427031c9c", x"5dba9fc22cc9cbb8",
+      x"893b078aee051a2a", x"629308d7dda5bd30", x"b8ceb96654f28d3c", x"761b2cc335657e53",
+      x"dffc57e999e26a3e", x"f218f8719af27c36", x"7f8aa1d7aa9122a9", x"97ef4b9e00022fb4",
+      x"de6d427a5935aa9d", x"e5037c98689fde69", x"a5578be112e994d5", x"2ef387d05e17a11b",
+      x"e1480adcef8230ef", x"306e6937566aaafa", x"62242eaa88e0feae", x"6f12bd173d708a12",
+      x"54b971c989e86b8d", x"6ba0187c737823fb", x"cdd0990e7794d7a4", x"696feb07d7b4db82",
+      x"ba10374190eb2b2a", x"c3aa42b7ae8ef2c9", x"b76217ecfac631c0", x"4c42b749336806f4",
+      x"4f5f13b8aa8268d9", x"84c88531a76a4b50", x"328053efeef0d947", x"bc1b0157aa89a069",
+      x"41dac9d0373f4979", x"1c18b8d37cdf8063", x"5f45142925b22c68", x"f785fd455c04aa75",
+      x"c8f16c28e3a45330", x"58ed443c9a95b127", x"e44facb04847fc20", x"01907cd50a5fb1d9",
+      x"17926c34df4cd2f9", x"daf282f08431bd42", x"0e791b0af7a7ab56", x"367ccb7b298eea4a",
+      x"c0f0a3bf121f6cfc", x"3dedc0718ac343cc", x"3bfee4a228686b4b", x"4040c9c877104b8b",
+      x"a5b49e37f60e878b", x"8d31022d95bf8ccd", x"b6ef05ccc12b7b48", x"047a68799dcc7909",
+      x"a1b2e852c65d65ec", x"2ec1ce7857600c17", x"12fc9eda56e24346", x"3c4f9b570933e42b",
+      x"de389d7e4ed3bf9a", x"f4ee35dcf56883bb", x"655feb3f1a26531e", x"85ddb8624fa21ea3",
+      x"42b3f05ec566d12e", x"a907f0c9f7f6ea62", x"2709189314d071e9", x"f2fe6239c46b2057",
+      x"e088718f358ea6c6", x"edf2ac92109a8115", x"8479f0eb7755a103", x"bd3d72ef5f133690",
+      x"0369a44cc5e7b6de", x"fb09c58f1e088f40", x"77919c53e0ef7b36", x"90e0239e44131d41",
+      x"7318db61d87c3c7f", x"9728a60faac50f54", x"f743fb8f1a092a6e", x"b5d017e116a35c1f",
+      x"8d18f1cbab718c03", x"8522b69049daa28c", x"2c043d6cb4f3f003", x"ec9ef540a8f7f684",
+      x"0488a34f77cae903", x"788d23db660998f7", x"fa0f2f79dcb9ff5e", x"9f26c3657078381f",
+      x"d1f60f97e7761b91", x"6ac2ff75f66c19cc", x"c7d81ca4bc7eca39", x"cc45e39522216bdc",
+      x"db18444d9e837a2c", x"84c32e72330ff623", x"cd05ab7bc1a1d8f0", x"08aa5ec888a351fd",
+      x"aea9e96f2ee9fb03", x"64e81a9cc5464e41", x"dc8dd1f3b73c63d4", x"3b8be4f93b002127",
+      x"57d3f86d80dc6842", x"5787dc9faa19126d", x"71d3d843554226b3", x"9fc3c81bdb3ad2af",
+      x"51efe3b53fecf047", x"9bad455bf1f8f125", x"85328b5a35cd83d0", x"ad66e2601018fc78",
+      x"ceef2dbbe2b71e86", x"4b8e6d7887feec08", x"af4d5e6906385111", x"1d281748dcbb077f",
+      x"24aff5ac3ccca45a", x"71a90ed2c5737c02", x"c45a62dc80aaf132", x"e3ba829d7094f29d",
+      x"9835afc470bc983b", x"128d2fae4ce798b0", x"2d0cf0ea59a5953a", x"62c1972e9892afe4",
+      x"4d064321ddd0e629", x"eeea603dca5a0707", x"4248a47eceaf5e0b", x"eecf7fda2f9ed3f8",
+      x"1ae5e1273b3dbae5", x"e606159d2a30fa62", x"37323c4ef4ec1bfd", x"2fb7a2d2ff4ad014",
+      x"58d87d53420a39dc", x"786c232cfcef406b", x"fb646d9179d0d18b", x"9e757dde0cce4c69",
+      x"8a19a2e7df810381", x"4a07c93b09247991", x"97780cd18721f567", x"ac08809c845747cd",
+      x"8c692aebe03e79af", x"253ceabb3240dfd2", x"f3655b7548211dae", x"7fff16f0c84c72bb",
+      x"6d1f8aebdd90e9af", x"4a10a8bcdf46c288", x"261a95cbd80ea664", x"f2c5708f2f70cbe5",
+      x"30da83195bbfaee5", x"d6e17ebc49c65ef7", x"88a0c5498478b815", x"47b3ac5f7ac405ff",
+      x"2f94937321b956b0", x"d014617ff1282eba", x"a4b3d64de6d2d18b", x"9c8427e436a6e152",
+      x"e2363238e9592c46", x"a8d0a4e37812191a", x"e44758f2a33fbe2e", x"e49a0de9776b85a9",
+      x"b90cb46715f71f22", x"864aebbae55455c9", x"1d96745edbce6a5d", x"3590a74bcc5d2046",
+      x"ff050b5fa34e16ef", x"3c17409df6e8ba1e", x"5958f1e0634ff6e6", x"2bcbf32f69e9372f",
+      x"1cb9e4221b46d484", x"6ade225e4be0159b", x"fd5142d0660b4497", x"11eabd06fbe2d6a8",
+      x"c6bfeaff5d738582", x"3a882c276374a5a0", x"e83e7ad37b5b27ce", x"3714c01535bc67cd",
+      x"94faea6a7007dc5a", x"ac27fd3a92111478", x"deb5945d40d60da7", x"9ac878cddd4ec8dd",
+      x"7215474185a72dc4", x"1830d9bf9255a043", x"4f7ffbf657ac11b3", x"c9b99dde9881241d",
+      x"13ce34db85842f5d", x"b7b9440ba8fdb5b2", x"a0279812dfb98f19", x"f0fa15984603715e",
+      x"288ed3ff2161db98", x"dff9ae713ab41aad", x"3da70eb1f742e533", x"024f6a0622516668",
+      x"015970222f8531e6", x"65ec27288dbdb625", x"96378047a5c97fd6", x"934a1b4a502bf9ca",
+      x"bd1c672a8aeaae2a", x"f31558e51ca55d41", x"37f0f7f88901c450", x"be75422aadaa9ea3",
+      x"054c110d500e5d35", x"57b3652726088611", x"c5aa730ff4a3daaa", x"8279e3e5899a6bd4",
+      x"a7853decbfb8f422", x"bc73b5c52e5c0ac4", x"b468963200e399f7", x"847e38110e2c8452",
+      x"98fc849ba97ec11c", x"3465cc17a02bfc6b", x"a63f127ba55ae81e", x"d8a1b6ac7d05e720",
+      x"ff98275294fdd395", x"65ad63a4f61eb32a", x"4a8b62a0f34042dc", x"75f7ed0a24c476f2",
+      x"a59fa85edca9e05d", x"89283c2df28c40b1", x"b430c101e37bcd25", x"b2f36b764bbcdba4",
+      x"90198c2606f7347e", x"6d82ec0cbe8b6c26", x"347f8fbc8b20c993", x"f46240bcd0b92060",
+      x"345dc0be9e0fe681", x"be289dda104b0d45", x"73e57a671d785e59", x"3b0ed37f0525c5cd",
+      x"ba46e5f635444c22", x"161b398fe554c245", x"e33aeb577fd775db", x"dde21ae344f8ec66",
+      x"1bf233bedbe2ebeb", x"ba9025adfcfcded9", x"9d0d4fd3f0ff27b8", x"f52f686fe2cdb237",
+      x"33e517d60dff4cd3", x"9066a272cd5091cf", x"ced65eb4134f2102", x"3dbcaf67e7eacab5",
+      x"ca64a3e669b67ead", x"41e1fa011ea9e32b", x"304f3a75be7290d7", x"7e56a7e91c55a48e",
+      x"92c24a786292f9b7", x"2201bc813bd35488", x"abf61fbd016a7e63", x"28b9cb2cff292c74",
+      x"000000000000000d"
+    ),
+    (
+      x"0ee2ce136706b0c1", x"e9905990cd9bb3ae", x"3bfed7210a6fbacd", x"ca912c4a98df3a89",
+      x"0f74a86cf83346a0", x"ae4ffd4590ddd9f1", x"5318441b1d16f228", x"c8985e69c1dd3413",
+      x"9aad27ae9c928113", x"fb0ce5d4de507567", x"93959ad1d15f7c63", x"411cce1cfe55cdac",
+      x"1a9030e8963e00a7", x"2ef4ca37aaa45448", x"cd9aa184f88c6e8b", x"67200b9b202452b4",
+      x"e7e060c82a4af7ca", x"b193da258daa3e7c", x"c179592bfcfe230b", x"ffa05a1f042cf760",
+      x"55f5271458b045fe", x"43149033609dbdc4", x"043ddc432bef2312", x"30a1eedce58f3ca2",
+      x"9795c4e18a61ede9", x"449020be947e6110", x"9b1ce5f7fe2a9dd8", x"eb9ce6a7a5b739d5",
+      x"984fe8acdead8996", x"bd4fb1de7748a12e", x"ac9009c8169f206c", x"176f0ad55aa3811e",
+      x"6a0f2b0d546e0fc7", x"3131b54625cb4c05", x"aac4844bc9a80c0d", x"c78de16bc0edfb48",
+      x"43734b64f28f87e9", x"948a46d8bb3bc812", x"81a5b40427031c9c", x"5dba9fc22cc9cbb8",
+      x"893b078aee051a2a", x"629308d7dda5bd30", x"b8ceb96654f28d3c", x"761b2cc335657e53",
+      x"dffc57e999e26a3e", x"f218f8719af27c36", x"7f8aa1d7aa9122a9", x"97ef4b9e00022fb4",
+      x"de6d427a5935aa9d", x"e5037c98689fde69", x"a5578be112e994d5", x"2ef387d05e17a11b",
+      x"e1480adcef8230ef", x"306e6937566aaafa", x"62242eaa88e0feae", x"6f12bd173d708a12",
+      x"54b971c989e86b8d", x"6ba0187c737823fb", x"cdd0990e7794d7a4", x"696feb07d7b4db82",
+      x"ba10374190eb2b2a", x"c3aa42b7ae8ef2c9", x"b76217ecfac631c0", x"4c42b749336806f4",
+      x"4f5f13b8aa8268d9", x"84c88531a76a4b50", x"328053efeef0d947", x"bc1b0157aa89a069",
+      x"41dac9d0373f4979", x"1c18b8d37cdf8063", x"5f45142925b22c68", x"f785fd455c04aa75",
+      x"c8f16c28e3a45330", x"58ed443c9a95b127", x"e44facb04847fc20", x"01907cd50a5fb1d9",
+      x"17926c34df4cd2f9", x"daf282f08431bd42", x"0e791b0af7a7ab56", x"367ccb7b298eea4a",
+      x"c0f0a3bf121f6cfc", x"3dedc0718ac343cc", x"3bfee4a228686b4b", x"4040c9c877104b8b",
+      x"a5b49e37f60e878b", x"8d31022d95bf8ccd", x"b6ef05ccc12b7b48", x"047a68799dcc7909",
+      x"a1b2e852c65d65ec", x"2ec1ce7857600c17", x"12fc9eda56e24346", x"3c4f9b570933e42b",
+      x"de389d7e4ed3bf9a", x"f4ee35dcf56883bb", x"655feb3f1a26531e", x"85ddb8624fa21ea3",
+      x"42b3f05ec566d12e", x"a907f0c9f7f6ea62", x"2709189314d071e9", x"f2fe6239c46b2057",
+      x"e088718f358ea6c6", x"edf2ac92109a8115", x"8479f0eb7755a103", x"bd3d72ef5f133690",
+      x"0369a44cc5e7b6de", x"fb09c58f1e088f40", x"77919c53e0ef7b36", x"90e0239e44131d41",
+      x"7318db61d87c3c7f", x"9728a60faac50f54", x"f743fb8f1a092a6e", x"b5d017e116a35c1f",
+      x"8d18f1cbab718c03", x"8522b69049daa28c", x"2c043d6cb4f3f003", x"ec9ef540a8f7f684",
+      x"0488a34f77cae903", x"788d23db660998f7", x"fa0f2f79dcb9ff5e", x"9f26c3657078381f",
+      x"d1f60f97e7761b91", x"6ac2ff75f66c19cc", x"c7d81ca4bc7eca39", x"cc45e39522216bdc",
+      x"db18444d9e837a2c", x"84c32e72330ff623", x"cd05ab7bc1a1d8f0", x"08aa5ec888a351fd",
+      x"aea9e96f2ee9fb03", x"64e81a9cc5464e41", x"dc8dd1f3b73c63d4", x"3b8be4f93b002127",
+      x"57d3f86d80dc6842", x"5787dc9faa19126d", x"71d3d843554226b3", x"9fc3c81bdb3ad2af",
+      x"51efe3b53fecf047", x"9bad455bf1f8f125", x"85328b5a35cd83d0", x"ad66e2601018fc78",
+      x"ceef2dbbe2b71e86", x"4b8e6d7887feec08", x"af4d5e6906385111", x"1d281748dcbb077f",
+      x"24aff5ac3ccca45a", x"71a90ed2c5737c02", x"c45a62dc80aaf132", x"e3ba829d7094f29d",
+      x"9835afc470bc983b", x"128d2fae4ce798b0", x"2d0cf0ea59a5953a", x"62c1972e9892afe4",
+      x"4d064321ddd0e629", x"eeea603dca5a0707", x"4248a47eceaf5e0b", x"eecf7fda2f9ed3f8",
+      x"1ae5e1273b3dbae5", x"e606159d2a30fa62", x"37323c4ef4ec1bfd", x"2fb7a2d2ff4ad014",
+      x"58d87d53420a39dc", x"786c232cfcef406b", x"fb646d9179d0d18b", x"9e757dde0cce4c69",
+      x"8a19a2e7df810381", x"4a07c93b09247991", x"97780cd18721f567", x"ac08809c845747cd",
+      x"8c692aebe03e79af", x"253ceabb3240dfd2", x"f3655b7548211dae", x"7fff16f0c84c72bb",
+      x"6d1f8aebdd90e9af", x"4a10a8bcdf46c288", x"261a95cbd80ea664", x"f2c5708f2f70cbe5",
+      x"30da83195bbfaee5", x"d6e17ebc49c65ef7", x"88a0c5498478b815", x"47b3ac5f7ac405ff",
+      x"2f94937321b956b0", x"d014617ff1282eba", x"a4b3d64de6d2d18b", x"9c8427e436a6e152",
+      x"e2363238e9592c46", x"a8d0a4e37812191a", x"e44758f2a33fbe2e", x"e49a0de9776b85a9",
+      x"b90cb46715f71f22", x"864aebbae55455c9", x"1d96745edbce6a5d", x"3590a74bcc5d2046",
+      x"ff050b5fa34e16ef", x"3c17409df6e8ba1e", x"5958f1e0634ff6e6", x"2bcbf32f69e9372f",
+      x"1cb9e4221b46d484", x"6ade225e4be0159b", x"fd5142d0660b4497", x"11eabd06fbe2d6a8",
+      x"c6bfeaff5d738582", x"3a882c276374a5a0", x"e83e7ad37b5b27ce", x"3714c01535bc67cd",
+      x"94faea6a7007dc5a", x"ac27fd3a92111478", x"deb5945d40d60da7", x"9ac878cddd4ec8dd",
+      x"7215474185a72dc4", x"1830d9bf9255a043", x"4f7ffbf657ac11b3", x"c9b99dde9881241d",
+      x"13ce34db85842f5d", x"b7b9440ba8fdb5b2", x"a0279812dfb98f19", x"f0fa15984603715e",
+      x"288ed3ff2161db98", x"dff9ae713ab41aad", x"3da70eb1f742e533", x"024f6a0622516668",
+      x"015970222f8531e6", x"65ec27288dbdb625", x"96378047a5c97fd6", x"934a1b4a502bf9ca",
+      x"bd1c672a8aeaae2a", x"f31558e51ca55d41", x"37f0f7f88901c450", x"be75422aadaa9ea3",
+      x"054c110d500e5d35", x"57b3652726088611", x"c5aa730ff4a3daaa", x"8279e3e5899a6bd4",
+      x"a7853decbfb8f422", x"bc73b5c52e5c0ac4", x"b468963200e399f7", x"847e38110e2c8452",
+      x"98fc849ba97ec11c", x"3465cc17a02bfc6b", x"a63f127ba55ae81e", x"d8a1b6ac7d05e720",
+      x"ff98275294fdd395", x"65ad63a4f61eb32a", x"4a8b62a0f34042dc", x"75f7ed0a24c476f2",
+      x"a59fa85edca9e05d", x"89283c2df28c40b1", x"b430c101e37bcd25", x"b2f36b764bbcdba4",
+      x"90198c2606f7347e", x"6d82ec0cbe8b6c26", x"347f8fbc8b20c993", x"f46240bcd0b92060",
+      x"345dc0be9e0fe681", x"be289dda104b0d45", x"73e57a671d785e59", x"3b0ed37f0525c5cd",
+      x"ba46e5f635444c22", x"161b398fe554c245", x"e33aeb577fd775db", x"dde21ae344f8ec66",
+      x"1bf233bedbe2ebeb", x"ba9025adfcfcded9", x"9d0d4fd3f0ff27b8", x"f52f686fe2cdb237",
+      x"33e517d60dff4cd3", x"9066a272cd5091cf", x"ced65eb4134f2102", x"3dbcaf67e7eacab5",
+      x"ca64a3e669b67ead", x"41e1fa011ea9e32b", x"304f3a75be7290d7", x"7e56a7e91c55a48e",
+      x"92c24a786292f9b7", x"2201bc813bd35488", x"abf61fbd016a7e63", x"28b9cb2cff292c74",
+      x"000000000000000d"
+    ),
+    (
+      x"329584a966fe9946", x"59ccecbcd3899f66", x"6350a43e350662d3", x"b65d5a19a83882dd",
+      x"e4173dfd8020d8b9", x"b07a50de652ee43f", x"9d22d939f2b74eee", x"904324f1c4263725",
+      x"144d583e61ae0892", x"df873d496bdfa49d", x"b8e129c280a092dc", x"6a36628e667faae2",
+      x"08958d00ec950413", x"befeb2b2f8b3f06b", x"ef5befdbe373b625", x"575335721c5d0ca3",
+      x"e592a24c27f91176", x"4b637641a9aa12e8", x"3ab4341d7c87de07", x"72f4806179012f93",
+      x"d99668cd41144c01", x"47251c3a8ff9b61e", x"31fb76f1f4b43b5d", x"a6de0b182c8af7ac",
+      x"db1ed8e37c4a45b4", x"37428f5e37e857fd", x"a896599e6d73cd87", x"8a343348a0da7d92",
+      x"314b842b315915e4", x"6ce119ca5e90efd4", x"0635e308469272a7", x"b7e3c3ed9cc7f074",
+      x"5b21fd28dd004527", x"d428e2bfeccf024e", x"2dc1a240c1f8b72a", x"b048b9933c4080ae",
+      x"1d790c3859e1afca", x"d60752992dc853d9", x"53a3600ff7ca888f", x"044f887b8980daa9",
+      x"0c2dfcea04338196", x"4a76c6a80b2753b6", x"c96fa4f4a91a9fb5", x"fdae5b33d5a079e6",
+      x"8304547c78e7135a", x"647d1571bfdc6234", x"f50451c76c2f51f6", x"5fadd3fbe4da8815",
+      x"771e53a3557d3646", x"bf5dcb196ab708bb", x"931a4bb2cb8ed128", x"95bd4bdc5bb4179e",
+      x"9f08cebaf998e59e", x"82e4914c59e85a42", x"9c27de0360f7fde1", x"8d4c5214cb03acc9",
+      x"e7120eb1d26be08b", x"309c26178b05bd66", x"781d99feae54011e", x"86af4c895008ea63",
+      x"7f2e4f55fa22feb4", x"05b858d84061e6af", x"fc7e1675115faf79", x"e19b953706b01b72",
+      x"dc8e265b5d2028a1", x"c7f6824a4fa7ef80", x"0ee68e4874e9f46c", x"5e7b5e51d5f32dcd",
+      x"a01181d556354f81", x"4c669d409dac2113", x"a03afb67ef9bb775", x"8844a8673a462e8b",
+      x"197c0c842910b907", x"e121a4f092167fd3", x"d28ce94d8fd9cf59", x"4c8aef4f79f29196",
+      x"46e11514d1678c87", x"8979271e794a1698", x"7018904713d9bb34", x"c6d3452f8993beed",
+      x"e63eab0fe90f26f7", x"887db11a7913b806", x"fd8c1e90ca091c13", x"9368e2f2373747e2",
+      x"58d536e6fe0be1d1", x"97431d4aa6fabba4", x"3f21ee5484162930", x"580bc210177219ab",
+      x"65e60fd48b0f294f", x"4ede6e96a071d919", x"02ff07675a1ec545", x"4fe6668a40e6daeb",
+      x"4fe14c3d731de4e0", x"7191e8bc3d5acc83", x"03e7600a83a553ac", x"04c65b4ea62324b5",
+      x"b6720e9e5bcf2949", x"d21d4e048c39c874", x"33ef51967d393ba4", x"d594b26ce576bd69",
+      x"a64e60dd0d72b77c", x"f57b08d5399722c6", x"ee9ec282c2470f58", x"8e707aa4f75673b3",
+      x"0a65c308d4d7411e", x"03438e968c8f93c3", x"695bc270d70ecf2a", x"ec1e78ac8b61c110",
+      x"0e40e9338719258b", x"34edebf20bf2a569", x"101aa983ad2fe92b", x"b4414dbf10319d05",
+      x"ee4470c86eabbb70", x"0fd8285bf3ec6673", x"42a1706efc2bf415", x"26cebe8266521898",
+      x"9b763f44bacbcbe6", x"1793164313a81aca", x"44fe908a86609bfd", x"be7e30d28e84a0ed",
+      x"2eb798e3ad19aeff", x"c90ae268082c9e65", x"205b26f466c8474d", x"2a6b12dfa98235fb",
+      x"1112ba7c08425d5c", x"fe142cfced634813", x"2c840cfd00307b23", x"74b2d4635edc4b63",
+      x"47bac332b83aa5d4", x"33b1930b4572ae70", x"1af48da7760ef114", x"ea0e5aa552a26b90",
+      x"e55412c1b91ce566", x"8acc9457b96a567a", x"14eae15cef3894c9", x"6d7379f606b2d502",
+      x"4aae711a4845d662", x"e44a682f6c34cee7", x"82290cf4f0b79617", x"50d3ec60217fcc84",
+      x"83c8b8cfd5fb9f15", x"680ce51ab715c088", x"a9144c83112673c9", x"d1b8f71d19a11086",
+      x"d4561a3dcd5f4b31", x"1a69932fcc09ffb2", x"cd6a4c53d398d78c", x"8ac97eff5ba13ac1",
+      x"65e14b04800c089e", x"e42cc8b047de8acb", x"fd35bb66c271e31a", x"fb333e1b186f5f1a",
+      x"1a7f81849f7d64bf", x"1e760ed66483bbee", x"df5d8236a16f7d4a", x"5b8bd9083322ace9",
+      x"f0c6cd9e4c05055d", x"49d3803d599000d5", x"3be00f2670370096", x"05c6559d6c1c01a6",
+      x"433f7249f3d824c4", x"02030a8251902c4e", x"a66f698852bfb213", x"467db6df5093ae93",
+      x"7de4a380e340300d", x"d922dc0121c0449c", x"bcdd6afc30715e2e", x"7b203ec0a1d706c1",
+      x"573609f9c2a4e1b5", x"ec7372fd73c1c082", x"8774c7c9e41ce8c4", x"3c919d993abaaf1a",
+      x"6374045e3b59f9ed", x"f2c6c04fad39f170", x"7cedcc6d535b3001", x"c11a26fc5791d0e7",
+      x"2c9aedfaa722dbf8", x"8dea21afea43069e", x"6ad38a6eab5e9ccb", x"9506a5ef0c284233",
+      x"8f7bf42116ffe618", x"9d5708af612dae2b", x"5d04e2667a1e5968", x"103df33c4ebaa3f1",
+      x"8ae16385641e3a22", x"c09f8a3b977a3a50", x"803f0f4af68996a0", x"f5e45f5f835c0cc2",
+      x"fb74298d62bb8174", x"08e1892c441c29da", x"3d16a7e2c895c8b4", x"0018d5ea57bf21ef",
+      x"c44507f7f0e64a09", x"029e53605fab96be", x"675adbd77717bf89", x"0a26dd932414fb51",
+      x"d8c77132de43586c", x"a595c3235303154e", x"e1793f85001f0024", x"5149f709db2d59a9",
+      x"97b3e60fc5e4ba57", x"9c174571a53a1d99", x"975e8fdaf6778269", x"e2c404562b8f204f",
+      x"1cad3f9f4b78446f", x"1e2ca71a3e6ccdef", x"3163b29ce8c083b8", x"d3748d8600b3614c",
+      x"10245da159ce9860", x"c93ba6f5dcdd543b", x"d8dded0e9052a6f6", x"27928fcf4dea606d",
+      x"3efc6cf703579623", x"df3899d248b54f7f", x"23de623629c2b488", x"8b49e003532b156e",
+      x"2ca265b71be2132d", x"b4921ba6af507b11", x"b3b6cab74db92a0f", x"34a2c656adcdc0c0",
+      x"9e81f0029e4b7f2b", x"abd7393e37b61cec", x"bf1287c4a14fa0b3", x"febe1a0729a0f5e6",
+      x"e72c666a55d2ec36", x"24f84928bce258e0", x"ebef9337d7327988", x"de9071dc7fef1b39",
+      x"beb3379820a8f868", x"4a426d2082a5f082", x"fee9e4ef6cdd50b4", x"388cd633cfc99f97",
+      x"a4c0d8e88d631461", x"da9cdb6312331436", x"d8fedc6c55d51aee", x"65d77e196bf7f9bb",
+      x"30dcf6037a37e930", x"2c0e775224d9b2e2", x"2ed182b6834c056c", x"805180c6041f2132",
+      x"ced1e567c942709b", x"e70099425200bbe5", x"61e6601605379680", x"30d8be5cec199efb",
+      x"68edcb644fb61390", x"07ebc5b8571232f1", x"fa71be4e00e9ea89", x"cf1ca6fc43ba1bdb",
+      x"e29ee02a4543990f", x"36c47acd31ced241", x"988fe4fcc0c47445", x"605d1b1e69dc69b6",
+      x"55bd56a408838d86", x"5b47c5d12f7ce17d", x"fd233aa43467fcab", x"8153069ea2d99ab7",
+      x"208ee3913e586109", x"e91a6b0261b23d26", x"5a6cab9a03b5376d", x"886504bcb6005b82",
+      x"bee135abc382ff16", x"2e123f8d3daa77f8", x"6ed83222603fef00", x"58a9eb0db7c3a61a",
+      x"85e21838a64aceb8", x"d9acb60b7078606e", x"d56bfbb48d2d9df4", x"ca368f5d9b058cc9",
+      x"e8d162d7e1ab1f51", x"a55e0747d89e359e", x"0b03d309771ea7b5", x"1fbf9eec21a87f9a",
+      x"6f4e2750317d1c1a", x"86a416fd08e1b6ce", x"e10a55b4d9533bfb", x"48f0df167a8aa5a9",
+      x"0000000000000013"
+    ),
+    (
+      x"02b1d7dc0dada228", x"863341dc91809eb4", x"7b82d17e3f4eab39", x"a060700be530f907",
+      x"6a1792a651b277d4", x"ee0bcacccc113547", x"b82761ddd1334a3d", x"5d7398a9ca16b086",
+      x"a2b719049380e36e", x"9342016b938a6942", x"65ca8d241d2bbf71", x"6dd3168675aeb4d5",
+      x"2bccfd6c9692b7b4", x"825d1535f977e2f2", x"922024628329438a", x"1fb73bba4dfe431f",
+      x"87acb02c1b96a023", x"00ddce2b4a216615", x"7b7e4fbe63ba2265", x"0d2344f614f398cc",
+      x"9c6df18c57a89551", x"bdf29e847d727f5e", x"2682d9d015ae99a3", x"999d3d0e6ae25ced",
+      x"43e7d3428352c691", x"86a0fa82afce93f1", x"a1e10582ba54741b", x"88fe99aa9238ef7f",
+      x"42821d79b5259167", x"b2ce2afb61f906f4", x"1e9c2351f3f2e5af", x"dd6cd5e838fd055c",
+      x"f0dff84efeb53972", x"91cd8d3ef0625a73", x"d9966ca48fa59b6e", x"72e06222676ebfd0",
+      x"b74901efe2f9f4af", x"c61c8ff4ede48c02", x"eafdf9d6ea46ea10", x"cc47fd73071549e3",
+      x"6389ab392012a50e", x"d159b43851ce6906", x"512dc1ba02a6a78b", x"d67b433ca9d75423",
+      x"45fd747ea8558051", x"d6dd39cd49488ddd", x"06b2dafc07e7e08a", x"7ba2124b8811ac84",
+      x"1b2a3c46c7d84ac4", x"b4756d67d74df2b1", x"239b2ae5f401aeab", x"154adac4d650186b",
+      x"312b784522b783f8", x"f72cfbfe0c6a1761", x"fe2f5e1e46ad1e1e", x"78fe3e16e566a42d",
+      x"2eadf2944274e2ec", x"ce0b87d41b1b0450", x"f7befef6c3386fa8", x"fbfd22b822e6a5eb",
+      x"17bd287de3b4efc3", x"67d9301d0ffa9f59", x"fc54c2ac68743883", x"f81709a3b43ee5d2",
+      x"4d6bc96d906176ab", x"38247860ed25ac3c", x"3df945259e5e5e9e", x"3fabf77ce1249c9c",
+      x"dcafb44251f25b20", x"660ef0ae1e02d7fc", x"c335fdd695f5d71f", x"3d7df88773acac65",
+      x"030ce80da45c2a66", x"e16f62b4f26628a7", x"0379137d716b7bc8", x"175f67f53e95e265",
+      x"25c61f1f694aa38b", x"8889c340a22447bd", x"95007a5b7d241d5c", x"1cb1e85cdb452275",
+      x"45cef1fbd583471a", x"f9a422279051c3c5", x"28395a01286576de", x"ab1142d9de108d5b",
+      x"7e05f1be8f45c7ac", x"495392a20da023ea", x"399537b37a3a68ed", x"01d100b0a5bbfa9a",
+      x"49a01814e218be0d", x"ae370ad6acb7215d", x"51ae6e4fc78e621a", x"486dcca0452df1cc",
+      x"e52e16fad54dde65", x"a3bdb58bfd35e461", x"5e536810b3204e68", x"28a89c5791d22663",
+      x"a8e4a89043eef460", x"4f37c27c863cec9c", x"b199ecf32f6c661b", x"39bc11fa2f4add6f",
+      x"6f3f5d6e620adf35", x"b4996c3d48c99dc8", x"767349f1e0689f63", x"b59718d2358e4ee3",
+      x"9bcf1622ddc3db08", x"5912388139691c57", x"452e4d983cb046df", x"522e8ec1d3a14234",
+      x"3894a4543950d1be", x"389bff9c1fad5d82", x"efd70391781c7de8", x"1d332491a38d86bd",
+      x"24ebeec6a2ab5ddf", x"d14d79733ae9491d", x"96ce04162c328055", x"db6ab655f37eca12",
+      x"c45b45f7c9839704", x"b977d8ee2236efeb", x"8afdc7f2b03d1210", x"303b127a8f22d657",
+      x"b88f7f4a7b912c37", x"a30d2c115335c9eb", x"edf677c6fe1ea0e5", x"e481ae9dea1eb388",
+      x"2afbe77888d05e46", x"63d5ac3b4835477e", x"3562301e6ed5710d", x"c1a5b6f648c03851",
+      x"762d1bb18208bcb3", x"0fd770afeac94df7", x"c6b0909f62bd6519", x"b04d75aed804e06d",
+      x"25e6bfbd8daef88c", x"8d8f898d219a922e", x"688691014b7796f0", x"9a00fb5245edd6af",
+      x"85f6d5dbb51e43ad", x"fdf60696d4aa4534", x"20412e3d5d945f79", x"b37ea0df9d1724cb",
+      x"16fde1bbdf30beb8", x"f611d1bcbc8ad249", x"34b80a5c2431f600", x"cf42f702911819f0",
+      x"a00d8edbdd6cc5ab", x"5ce2bca07d4b8dc6", x"d376310ce3ddc478", x"8612b7ab9704c709",
+      x"a60c6efa8a42aac9", x"cf22d04e8dae045d", x"352e2292c9e843e8", x"9c4876a51a9edf15",
+      x"8bfe17cf56f5bb90", x"e032064b70edb133", x"5be08c796746acef", x"5b29f5301d0ad2e4",
+      x"38424748ec19f2ae", x"8a8fa8959d01ed37", x"c7a66b6e30275c82", x"ab8b07fa25b540c9",
+      x"4aaf0650d01e6822", x"73de8ef7bc2c60b0", x"82522d75f19f1570", x"b07266a6e257c4e1",
+      x"d9bc8771a9f1e230", x"903180d983286185", x"9b78965702b4b844", x"498291f0c4fc66d3",
+      x"6b570a87a56da13d", x"0f796bb9af419992", x"b81f902d5b344b03", x"ec02d2deba9e142e",
+      x"32b1ad1f5a394a1b", x"7b3ce3d47849b3e1", x"f38f2dc32644b514", x"aca2184ed25c8615",
+      x"304a37983e7a0697", x"2400605818996bf0", x"bc75834d40ef1b6c", x"c07c4def5b0a30e2",
+      x"27fbb6a3bd585777", x"8712213cbf62005a", x"e097b8fe9c626c2e", x"954e60ba589d3055",
+      x"513f0d9b00ac58ee", x"1cbdcf1b09a3ce1e", x"3132a4c2cbbca1fa", x"69542842fce69981",
+      x"4b99b06a0f6e6bef", x"c81e3f296e234208", x"941b5626f72edec2", x"1481cdfca66298c1",
+      x"553443e2f1a49e93", x"4c4d1174c91f7943", x"caf295875a25d1db", x"fb31982941476eb6",
+      x"02fe000f6517d4ce", x"feff010d950c9405", x"cf566397c2ea9ab0", x"9dd2846c399ca155",
+      x"e0d9affec69c6999", x"5a884c237fd05fda", x"87166649decb2f3f", x"d6bcbc93cdf604d4",
+      x"9d3ae1a0138f6a49", x"034fd6f8d8910081", x"2b06b1c2de6637bd", x"74edc8e3131856d6",
+      x"558a1f028aa5531d", x"868e2b6b5088b764", x"d5e4687438bd415a", x"ba7e786dd8afb1b6",
+      x"a8a93f5292a8cee2", x"8a487fb158371041", x"0bdf2fcfb1786de4", x"c671dd5448dde7d0",
+      x"cb545dc14f9409be", x"e2e6478c3b9fc051", x"b0cd66e441e559ab", x"d2a16f2a1521e5fc",
+      x"a4de52eee1435ea5", x"d29a1398950ab8ab", x"e76e78c76e4da46d", x"7b5e0edcdbbb7942",
+      x"b5e71974175c4717", x"48f4b2a24930beb1", x"2a7ce2daa644210d", x"c8e9e7d024beee11",
+      x"54d10d37898a9da0", x"7fcbc82bd34311b2", x"b3bb4f9aafc03a0e", x"826f2ae5a112c414",
+      x"9be41baea1ce2eda", x"ee31a253e0f10e12", x"63504ebeab4a7e9d", x"aa102b5272e21f47",
+      x"93297ec5dbfd17e0", x"010af09ff7c8c2d4", x"00e4f499ca787eb3", x"0b626f4fbe1e52c4",
+      x"a9f34f7420e64f88", x"83d4b34924555351", x"180bfd96012b2468", x"a9ba0371189014b8",
+      x"e1a52121cd82e4c1", x"51f7d42d9cb8b902", x"05e9a05ebabead67", x"f9109d8fa6ceb2cb",
+      x"93f9fbfa1c3413d3", x"7ba3920d916307c2", x"39c3cfd2dbaaa725", x"eb201d88dc099d1d",
+      x"dac935bf87360f92", x"2a4dcb899acdadde", x"c95b87232000b4f6", x"00a2d7b533be7934",
+      x"6fb9c4cbfa901ee0", x"b75beb8f4a641a77", x"7ee271dfd7aa179e", x"6b996f57de1a7b6a",
+      x"81f8276d164ebb7e", x"6c45a05154bd8762", x"ecda3e6f2827c582", x"1e3e076c5c0ad45b",
+      x"25d29fba327604ed", x"762fa2fc83382fe0", x"d3fc98bb17d74aad", x"4b704427f2faf31c",
+      x"fe1c2e9bae4869ab", x"76f4ec0b004a7c75", x"ddf651a81091c3b1", x"f7d73c411b426626",
+      x"8b0291e71fbed6fe", x"05dc015fc927eb75", x"53beb5cc2f7f2ff0", x"07b53fea3323536f",
+      x"000000000000000c"
+    ),
+    (
+      x"2b996af785ce7e12", x"e34d81ee0ed71720", x"7130a4de1de52707", x"70364077e14f073e",
+      x"9f6a38d47230f24b", x"12f35f0a6419252e", x"afa5b743e8ec81ae", x"ce0707fbe29756f0",
+      x"702d843ac3fd1ad8", x"25ca6a61954476ab", x"249f15817fd5604a", x"1791dc044efb27ec",
+      x"359dafbcbe6cd98d", x"54ff9494a39c13e7", x"ab18ece48eeccc4c", x"a74b767c0064a8df",
+      x"900de65128d231b5", x"89082aae1ed0aa78", x"0db31a069336e35d", x"499aa1d16f37e062",
+      x"5a957448c95fc1ce", x"d2ca5870b56f5b03", x"bdf92be71ba2221c", x"3b316baba9664195",
+      x"d429e6619878dcc4", x"4a084dff84617da1", x"ada63eebb5fdf6de", x"556445a1cd861a2c",
+      x"d4c634e5a0ebca96", x"11179ccb2636ca06", x"fd94b63cc377c67c", x"35c118598475bfa9",
+      x"35367555d6aaac68", x"b9c447f44363cc9e", x"2cd579203b0d8598", x"30f506cec7879b17",
+      x"d897a9254ed2df0c", x"df906a0b0b484285", x"6fe3bb4ee04d2f17", x"8e27d5419918194f",
+      x"3dd4fdfd8c4a022f", x"82c45cc819bea8c7", x"5c58c90acbebfd61", x"61d79000688f20f6",
+      x"33680c63d1dbe6bd", x"fdfa78f23f4c2331", x"5145880dd76d2ce6", x"af6f367bd411c7af",
+      x"ff3e2a68405e1743", x"6c323f30275e51cf", x"51d6bef73b75057e", x"1af5320de2fc0180",
+      x"d4182f941dfaf659", x"8a9f3adae06a4421", x"46a4f532c571ce81", x"dd17514ba96a2e78",
+      x"d3582e03c157e187", x"13a0d10d806d4524", x"520363964be1a158", x"69a2519e813af129",
+      x"5f5ff04917ff3616", x"ff78560c75c73b2f", x"4b74fbf4bf6c788b", x"63ed428b2c1020b0",
+      x"602de6a002942c16", x"19da4459daa50874", x"fc0cf4f1ae8b2912", x"517dd73039f46624",
+      x"cfd757cbacf0bfb2", x"9ac9dd31daf05ee4", x"af0e1ccd23c6395c", x"3fb923fa642a836d",
+      x"075839852c7bf5e1", x"ab6bb7f38efc8893", x"666759e5df5ee5eb", x"012d440aaf9c0522",
+      x"d7de1caf7e3392c7", x"9629f78778342a12", x"397e459838f4caa0", x"2edaa82c565dea69",
+      x"3d1df050b270c79d", x"e0a6c16f630dc9b1", x"bcf2cd28c08bef63", x"b57038d3dbc5ff32",
+      x"9d221181fcc5e341", x"7e8a4c0e0ffb2192", x"b68be3026647ea88", x"b3d8e9d694a1ceac",
+      x"a5d295d5294578aa", x"c938973785c7d64c", x"4d93ded11b239291", x"6997ad9633bfa34d",
+      x"400a9b60767f3460", x"2139c9910e80b3bb", x"9841a3ea49f033c0", x"2a79f811aec58214",
+      x"8cf14771b38aeb49", x"2e68d7c3c585d25f", x"5df4bcf13b16943f", x"b811f2d59e02a824",
+      x"ee60b904b9020208", x"90624043040e3eea", x"1998026dab4c130e", x"293e5f03c9c5d5a1",
+      x"96becfd3c53f9fa9", x"4dccd1a339eeef3f", x"3b81afd1c41d6481", x"4342ebec1c0960ea",
+      x"a8484ccf2c3e65fb", x"4d18110568f115de", x"42c048c3126eff00", x"4b2ea4f070684950",
+      x"0af9e591371c5938", x"3c913bce310af6e7", x"cca67e6f6acf8103", x"6bc6982dc928da43",
+      x"9c8afe9f9d2fb184", x"3247ff2db350c2db", x"3b8a0e863f904fc2", x"46039e75721a90ef",
+      x"d7c4ee05d0541125", x"72958d4e399137d8", x"8e546322d8c98581", x"41245f552d858f24",
+      x"b5f485def4561e11", x"21d26f8540321290", x"a4851b7bd77bc172", x"bcdf518e246e9325",
+      x"9b102c675a749c89", x"74de5b4a039680ce", x"8ea0a2adb39f6bdb", x"85c766f84645c1bc",
+      x"54075b6f23740b43", x"10201e3d42e61047", x"d97a5b0e598b93d6", x"31bfcdd7c42580bc",
+      x"0c42f14bcc1539a7", x"c866abb8487adf40", x"5e93dae3b75abbd5", x"ed41c86cd9e98a3d",
+      x"1b5f5a52146ffcfe", x"a325fd10cf85dbac", x"eac9266d8dfa4c86", x"7bb1cd6a0ee5db5f",
+      x"f53fbfb232ab6f2d", x"8034f52b5a105d1b", x"e1cd925ed09481a1", x"fc466723fda83d53",
+      x"df46ea45e29710c5", x"5872e17a19cd1f1b", x"3487935b7e8fd3c3", x"c6acc80189b861b6",
+      x"d7acc7578e840f56", x"7557893de059332a", x"20f6bc00ccf9fb64", x"c41774a90dc26b10",
+      x"f9043740c4f97405", x"519973b347ccb3b3", x"cd03c2479c920422", x"f3ee29401e8ac9a9",
+      x"7361868b9f9dce8e", x"4b7e41f11164d888", x"d81c718260fd7217", x"8c08c12f84f7c3ba",
+      x"e72b193ab7776872", x"0f43fd5d171b0d4f", x"62366463dd426991", x"6369a9a0cbd727ea",
+      x"b623322311447205", x"05bbb3e1fc01d395", x"0852dfb11627611e", x"6cde4f8db903f753",
+      x"16c18f0b5fcdee7e", x"81d518cb125c8178", x"041bab5a3059877e", x"b3027263852c9058",
+      x"3b73a7a63ae04d17", x"0786f0d20f8d371c", x"24944b3aa9b2ef59", x"73bcc731de929540",
+      x"98b617709ce7623a", x"aadb8a01bbdc6dd1", x"963b4ae67008b899", x"40223c625e485d6c",
+      x"0ead81c9bfc1785f", x"c24b6fd13fd390d1", x"9720a91cc0e39aa4", x"57f24e3229abf267",
+      x"895a5256e054b0c9", x"f4ced68f6f2b415e", x"e1824f0cd82ee3f1", x"b802f2eab5c02917",
+      x"394d6efdd96ddf52", x"d96f52949b36d7b1", x"9c738204fbceb01f", x"a08b1a6b84fb1655",
+      x"ab5489170d982b5f", x"5513789cb17afc1e", x"e83e189be7f0c431", x"5a9ae0da998bc12c",
+      x"6d4d7e663971ac05", x"6cfd37399bcf2ae0", x"dc6ed8c080da4532", x"1766d3de41833ec1",
+      x"7f851faba5aa55a6", x"b3cd4507265f1eb8", x"408db542a5f2736a", x"3f25a288432671e8",
+      x"d3eb1060e0ead057", x"411e9dc8bf60a980", x"68927b03bc6bdd40", x"0cd53054bc218bcc",
+      x"d617979de476e822", x"392fe30c28f50f1d", x"4793039e45f0e38e", x"0e7e752e410b74c4",
+      x"f868de3cf2805df1", x"8cf5e8b1dd21ec4e", x"8dbb212b7dcefe87", x"2f2bbbb3628e8eab",
+      x"6183a5f30a4e4b8e", x"ecd3079ca473024b", x"b5522e44e2f11197", x"5daa9b6513a42bfd",
+      x"ca97bb05ff7edbfc", x"08c412d6144d5b2e", x"8c5081dffb040839", x"583ddcefc813beb8",
+      x"471d10550e574364", x"b4d1851d6d2a5748", x"882c0a41577fc5ff", x"5326c966b2f2f759",
+      x"136c036ffcad3eaf", x"712a5c9fab37b5a7", x"8f0cc73a988357d9", x"145bc85e45b3f7b6",
+      x"1e3170327cba6b11", x"0e15e43e84e0bc44", x"47a9c97734133af0", x"6c64cd608b065ad5",
+      x"34c60dd9e8bdb731", x"ff91906a4ce492a5", x"bb5599ff63487410", x"37cc2798c260ec5c",
+      x"094e123cab82bce8", x"2c0d552e3b11779b", x"96960b47aa3b1f20", x"056748813b570f5c",
+      x"7f874e9a0b608dba", x"0024542044cd10c9", x"ed5f94dea6cd2a97", x"bd0c8742cd11bf77",
+      x"f19b1d1b5bf9d6fc", x"2d87bce93b0209e0", x"3dfa987ffd2ace26", x"98eb4a3ce8b9a73a",
+      x"a153d545d34e5c1a", x"7468c7017e440107", x"c9db81cfbecbf417", x"fee6a61e6dc99da4",
+      x"980c2b45865639c8", x"bd32b64a9148dc84", x"1336bce10a0a2bff", x"f410c69307bbd6fe",
+      x"ef944b4ffa976bd7", x"f6dd7dd25c24b345", x"6c736d9882945f24", x"eb9d9643e2a3bb65",
+      x"c139b0c8c4d7ede2", x"c06e0fc69d282d93", x"6b5a79d0f0bfdfd9", x"0fa421339f51e180",
+      x"2d3e2ccb08984f68", x"47e581ad120062ef", x"341a6990e557476c", x"8513dc35f6068778",
+      x"0000000000000005"
+    ),
+    (
+      x"5732d5ef0b9cfc24", x"c69b03dc1dae2e40", x"e26149bc3bca4e0f", x"e06c80efc29e0e7c",
+      x"3ed471a8e461e496", x"25e6be14c8324a5d", x"5f4b6e87d1d9035c", x"9c0e0ff7c52eade1",
+      x"e05b087587fa35b1", x"4b94d4c32a88ed56", x"493e2b02ffaac094", x"2f23b8089df64fd8",
+      x"6b3b5f797cd9b31a", x"a9ff2929473827ce", x"5631d9c91dd99898", x"4e96ecf800c951bf",
+      x"201bcca251a4636b", x"1210555c3da154f1", x"1b66340d266dc6bb", x"933543a2de6fc0c4",
+      x"b52ae89192bf839c", x"a594b0e16adeb606", x"7bf257ce37444439", x"7662d75752cc832b",
+      x"a853ccc330f1b988", x"94109bff08c2fb43", x"5b4c7dd76bfbedbc", x"aac88b439b0c3459",
+      x"a98c69cb41d7952c", x"222f39964c6d940d", x"fb296c7986ef8cf8", x"6b8230b308eb7f53",
+      x"6a6ceaabad5558d0", x"73888fe886c7993c", x"59aaf240761b0b31", x"61ea0d9d8f0f362e",
+      x"b12f524a9da5be18", x"bf20d4161690850b", x"dfc7769dc09a5e2f", x"1c4faa833230329e",
+      x"7ba9fbfb1894045f", x"0588b990337d518e", x"b8b1921597d7fac3", x"c3af2000d11e41ec",
+      x"66d018c7a3b7cd7a", x"fbf4f1e47e984662", x"a28b101baeda59cd", x"5ede6cf7a8238f5e",
+      x"fe7c54d080bc2e87", x"d8647e604ebca39f", x"a3ad7dee76ea0afc", x"35ea641bc5f80300",
+      x"a8305f283bf5ecb2", x"153e75b5c0d48843", x"8d49ea658ae39d03", x"ba2ea29752d45cf0",
+      x"a6b05c0782afc30f", x"2741a21b00da8a49", x"a406c72c97c342b0", x"d344a33d0275e252",
+      x"bebfe0922ffe6c2c", x"fef0ac18eb8e765e", x"96e9f7e97ed8f117", x"c7da851658204160",
+      x"c05bcd400528582c", x"33b488b3b54a10e8", x"f819e9e35d165224", x"a2fbae6073e8cc49",
+      x"9faeaf9759e17f64", x"3593ba63b5e0bdc9", x"5e1c399a478c72b9", x"7f7247f4c85506db",
+      x"0eb0730a58f7ebc2", x"56d76fe71df91126", x"ccceb3cbbebdcbd7", x"025a88155f380a44",
+      x"afbc395efc67258e", x"2c53ef0ef0685425", x"72fc8b3071e99541", x"5db55058acbbd4d2",
+      x"7a3be0a164e18f3a", x"c14d82dec61b9362", x"79e59a518117dec7", x"6ae071a7b78bfe65",
+      x"3a442303f98bc683", x"fd14981c1ff64325", x"6d17c604cc8fd510", x"67b1d3ad29439d59",
+      x"4ba52baa528af155", x"92712e6f0b8fac99", x"9b27bda236472523", x"d32f5b2c677f469a",
+      x"801536c0ecfe68c0", x"427393221d016776", x"308347d493e06780", x"54f3f0235d8b0429",
+      x"19e28ee36715d692", x"5cd1af878b0ba4bf", x"bbe979e2762d287e", x"7023e5ab3c055048",
+      x"dcc1720972040411", x"20c48086081c7dd5", x"333004db5698261d", x"527cbe07938bab42",
+      x"2d7d9fa78a7f3f52", x"9b99a34673ddde7f", x"77035fa3883ac902", x"8685d7d83812c1d4",
+      x"5090999e587ccbf6", x"9a30220ad1e22bbd", x"8580918624ddfe00", x"965d49e0e0d092a0",
+      x"15f3cb226e38b270", x"7922779c6215edce", x"994cfcded59f0206", x"d78d305b9251b487",
+      x"3915fd3f3a5f6308", x"648ffe5b66a185b7", x"77141d0c7f209f84", x"8c073ceae43521de",
+      x"af89dc0ba0a8224a", x"e52b1a9c73226fb1", x"1ca8c645b1930b02", x"8248beaa5b0b1e49",
+      x"6be90bbde8ac3c22", x"43a4df0a80642521", x"490a36f7aef782e4", x"79bea31c48dd264b",
+      x"362058ceb4e93913", x"e9bcb694072d019d", x"1d41455b673ed7b6", x"0b8ecdf08c8b8379",
+      x"a80eb6de46e81687", x"20403c7a85cc208e", x"b2f4b61cb31727ac", x"637f9baf884b0179",
+      x"1885e297982a734e", x"90cd577090f5be80", x"bd27b5c76eb577ab", x"da8390d9b3d3147a",
+      x"36beb4a428dff9fd", x"464bfa219f0bb758", x"d5924cdb1bf4990d", x"f7639ad41dcbb6bf",
+      x"ea7f7f646556de5a", x"0069ea56b420ba37", x"c39b24bda1290343", x"f88cce47fb507aa7",
+      x"be8dd48bc52e218b", x"b0e5c2f4339a3e37", x"690f26b6fd1fa786", x"8d5990031370c36c",
+      x"af598eaf1d081ead", x"eaaf127bc0b26655", x"41ed780199f3f6c8", x"882ee9521b84d620",
+      x"f2086e8189f2e80b", x"a332e7668f996767", x"9a07848f39240844", x"e7dc52803d159353",
+      x"e6c30d173f3b9d1d", x"96fc83e222c9b110", x"b038e304c1fae42e", x"1811825f09ef8775",
+      x"ce5632756eeed0e5", x"1e87faba2e361a9f", x"c46cc8c7ba84d322", x"c6d3534197ae4fd4",
+      x"6c4664462288e40a", x"0b7767c3f803a72b", x"10a5bf622c4ec23c", x"d9bc9f1b7207eea6",
+      x"2d831e16bf9bdcfc", x"03aa319624b902f0", x"083756b460b30efd", x"6604e4c70a5920b0",
+      x"76e74f4c75c09a2f", x"0f0de1a41f1a6e38", x"492896755365deb2", x"e7798e63bd252a80",
+      x"316c2ee139cec474", x"55b7140377b8dba3", x"2c7695cce0117133", x"804478c4bc90bad9",
+      x"1d5b03937f82f0be", x"8496dfa27fa721a2", x"2e41523981c73549", x"afe49c645357e4cf",
+      x"12b4a4adc0a96192", x"e99dad1ede5682bd", x"c3049e19b05dc7e3", x"7005e5d56b80522f",
+      x"729addfbb2dbbea5", x"b2dea529366daf62", x"38e70409f79d603f", x"411634d709f62cab",
+      x"56a9122e1b3056bf", x"aa26f13962f5f83d", x"d07c3137cfe18862", x"b535c1b533178259",
+      x"da9afccc72e3580a", x"d9fa6e73379e55c0", x"b8ddb18101b48a64", x"2ecda7bc83067d83",
+      x"ff0a3f574b54ab4c", x"679a8a0e4cbe3d70", x"811b6a854be4e6d5", x"7e4b4510864ce3d0",
+      x"a7d620c1c1d5a0ae", x"823d3b917ec15301", x"d124f60778d7ba80", x"19aa60a978431798",
+      x"ac2f2f3bc8edd044", x"725fc61851ea1e3b", x"8f26073c8be1c71c", x"1cfcea5c8216e988",
+      x"f0d1bc79e500bbe2", x"19ebd163ba43d89d", x"1b764256fb9dfd0f", x"5e577766c51d1d57",
+      x"c3074be6149c971c", x"d9a60f3948e60496", x"6aa45c89c5e2232f", x"bb5536ca274857fb",
+      x"952f760bfefdb7f8", x"118825ac289ab65d", x"18a103bff6081072", x"b07bb9df90277d71",
+      x"8e3a20aa1cae86c8", x"69a30a3ada54ae90", x"10581482aeff8bff", x"a64d92cd65e5eeb3",
+      x"26d806dff95a7d5e", x"e254b93f566f6b4e", x"1e198e753106afb2", x"28b790bc8b67ef6d",
+      x"3c62e064f974d622", x"1c2bc87d09c17888", x"8f5392ee682675e0", x"d8c99ac1160cb5aa",
+      x"698c1bb3d17b6e62", x"ff2320d499c9254a", x"76ab33fec690e821", x"6f984f3184c1d8b9",
+      x"129c2479570579d0", x"581aaa5c7622ef36", x"2d2c168f54763e40", x"0ace910276ae1eb9",
+      x"ff0e9d3416c11b74", x"0048a840899a2192", x"dabf29bd4d9a552e", x"7a190e859a237eef",
+      x"e3363a36b7f3adf9", x"5b0f79d2760413c1", x"7bf530fffa559c4c", x"31d69479d1734e74",
+      x"42a7aa8ba69cb835", x"e8d18e02fc88020f", x"93b7039f7d97e82e", x"fdcd4c3cdb933b49",
+      x"3018568b0cac7391", x"7a656c952291b909", x"266d79c2141457ff", x"e8218d260f77adfc",
+      x"df28969ff52ed7af", x"edbafba4b849668b", x"d8e6db310528be49", x"d73b2c87c54776ca",
+      x"8273619189afdbc5", x"80dc1f8d3a505b27", x"d6b4f3a1e17fbfb3", x"1f4842673ea3c300",
+      x"5a7c599611309ed0", x"8fcb035a2400c5de", x"6834d321caae8ed8", x"0a27b86bec0d0ef0",
+      x"000000000000000b"
+    )
+  );
+
+  signal clk      : std_logic := '0';
+  signal finished : boolean := false;
+  signal rst      : std_logic := '1';
+  signal start    : std_logic := '0';
+  signal n_pos    : unsigned(6 downto 0) := (others => '0');
+  signal ready, done : std_logic;
+
+  -- posiciones: carga desde el TB (mux de direccion de position_mem, como en el top)
+  signal ld      : std_logic := '0';
+  signal ld_we   : std_logic := '0';
+  signal ld_addr : unsigned(6 downto 0) := (others => '0');
+  signal ld_din  : unsigned(14 downto 0) := (others => '0');
+  signal pm_wr_addr : unsigned(6 downto 0);
+  signal pm_rd_addr : unsigned(6 downto 0);
+  signal pos_addr : unsigned(6 downto 0);
+  signal pos_data : unsigned(14 downto 0);
+
+  -- densos: escritura desde el TB
+  signal dn_we    : std_logic := '0';
+  signal dn_waddr : unsigned(8 downto 0) := (others => '0');
+  signal dA_wdata, dB_wdata : std_logic_vector(63 downto 0) := (others => '0');
+  signal dense_addr   : unsigned(8 downto 0);
+  signal dense_a_data, dense_b_data : std_logic_vector(63 downto 0);
+
+  -- acumuladores
+  signal acc_addr1, acc_addr2 : unsigned(9 downto 0);
+  signal acc_we1, acc_we2     : std_logic;
+  signal acc_din1, accA_din2, accB_din2 : std_logic_vector(63 downto 0);
+  signal accA_dout1, accB_dout1, accA_dout2, accB_dout2 : std_logic_vector(63 downto 0);
+
+  -- resultados
+  signal res_we     : std_logic;
+  signal res_addr   : unsigned(8 downto 0);
+  signal res_a_data, res_b_data : std_logic_vector(63 downto 0);
+  signal rd_addr    : unsigned(8 downto 0) := (others => '0');
+  signal resA_rdata, resB_rdata : std_logic_vector(63 downto 0);
+
+begin
+
+  clkgen : process
+  begin
+    while not finished loop
+      clk <= '0'; wait for 5 ns;
+      clk <= '1'; wait for 5 ns;
+    end loop;
+    wait;
+  end process;
+
+  dut : entity work.poly_mul2
+    generic map (N => 17669, DUAL => true)
+    port map (
+      clk => clk, rst => rst, start => start, n_pos => n_pos, ready => ready, done => done,
+      pos_addr => pos_addr, pos_data => pos_data,
+      dense_addr => dense_addr, dense_a_data => dense_a_data, dense_b_data => dense_b_data,
+      acc_addr1 => acc_addr1, acc_we1 => acc_we1, acc_din1 => acc_din1,
+      acc_addr2 => acc_addr2, acc_we2 => acc_we2,
+      accA_din2 => accA_din2, accB_din2 => accB_din2,
+      accA_dout1 => accA_dout1, accB_dout1 => accB_dout1,
+      accA_dout2 => accA_dout2, accB_dout2 => accB_dout2,
+      res_we => res_we, res_addr => res_addr, res_a_data => res_a_data, res_b_data => res_b_data);
+
+  -- ---- memorias (instanciadas aqui, como se haria en el top) ----
+  pm_wr_addr <= ld_addr when ld = '1' else pos_addr;
+  pm_rd_addr <= ld_addr when ld = '1' else pos_addr;
+  pm : entity work.position_mem
+    generic map (DATA_WIDTH => 15, ADDR_WIDTH => 7)
+    port map (clk => clk, we => ld_we, wr_addr => pm_wr_addr, din => ld_din, rd_addr => pm_rd_addr, dout => pos_data);
+
+  deA : entity work.ram64_sdp
+    generic map (DEPTH => 277, ADDR_W => 9)
+    port map (clk => clk, we => dn_we, waddr => dn_waddr, wdata => dA_wdata,
+              raddr => dense_addr, rdata => dense_a_data);
+  deB : entity work.ram64_sdp
+    generic map (DEPTH => 277, ADDR_W => 9)
+    port map (clk => clk, we => dn_we, waddr => dn_waddr, wdata => dB_wdata,
+              raddr => dense_addr, rdata => dense_b_data);
+
+  accA : entity work.ram64_tdp
+    generic map (DEPTH => 554, ADDR_W => 10)
+    port map (clk => clk,
+              we_1 => acc_we1, addr_1 => acc_addr1, din_1 => acc_din1, dout_1 => accA_dout1,
+              we_2 => acc_we2, addr_2 => acc_addr2, din_2 => accA_din2, dout_2 => accA_dout2);
+  accB : entity work.ram64_tdp
+    generic map (DEPTH => 554, ADDR_W => 10)
+    port map (clk => clk,
+              we_1 => acc_we1, addr_1 => acc_addr1, din_1 => acc_din1, dout_1 => accB_dout1,
+              we_2 => acc_we2, addr_2 => acc_addr2, din_2 => accB_din2, dout_2 => accB_dout2);
+
+  resA : entity work.ram64_sdp
+    generic map (DEPTH => 277, ADDR_W => 9)
+    port map (clk => clk, we => res_we, waddr => res_addr, wdata => res_a_data,
+              raddr => rd_addr, rdata => resA_rdata);
+  resB : entity work.ram64_sdp
+    generic map (DEPTH => 277, ADDR_W => 9)
+    port map (clk => clk, we => res_we, waddr => res_addr, wdata => res_b_data,
+              raddr => rd_addr, rdata => resB_rdata);
+
+  stim : process
+    variable e, errs : integer := 0;
+    variable t0      : time;
+    variable lat     : integer;
+  begin
+    -- reset
+    wait for 50 ns;
+    wait until rising_edge(clk);
+    rst <= '0';
+    wait until rising_edge(clk);
+
+    -- carga de H (canal A) y de B en las memorias densas
+    for j in 0 to W-1 loop
+      dn_we    <= '1';
+      dn_waddr <= to_unsigned(j, 9);
+      dA_wdata <= DENA(j);
+      dB_wdata <= DENB(j);
+      wait until rising_edge(clk);
+    end loop;
+    dn_we <= '0';
+
+    -- position_mem a cero (evita 'U' en las posiciones que el modulo lee por adelantado)
+    ld <= '1';
+    for i in 0 to 127 loop
+      ld_we   <= '1';
+      ld_addr <= to_unsigned(i, 7);
+      ld_din  <= (others => '0');
+      wait until rising_edge(clk);
+    end loop;
+    ld_we <= '0';
+    ld    <= '0';
+    wait until rising_edge(clk);
+
+    for c in 0 to K-1 loop
+      -- carga de las posiciones del caso
+      ld <= '1';
+      for i in 0 to NPOS(c)-1 loop
+        ld_we   <= '1';
+        ld_addr <= to_unsigned(i, 7);
+        ld_din  <= to_unsigned(POS(c, i), 15);
+        wait until rising_edge(clk);
+      end loop;
+      ld_we <= '0';
+      ld    <= '0';
+      wait until rising_edge(clk);
+
+      wait until rising_edge(clk) and ready = '1';   -- ready='1' nada mas salir de reset: no hay barrido
+      n_pos <= to_unsigned(NPOS(c), 7);
+      start <= '1';
+      wait until rising_edge(clk);
+      t0 := now;
+      start <= '0';
+      wait until rising_edge(clk) and done = '1';
+      lat := (now - t0) / 10 ns;
+      wait until rising_edge(clk);
+
+      -- lectura de los resultados (lectura registrada: direccion, 2 flancos, dato)
+      e := 0;
+      for j in 0 to W-1 loop
+        rd_addr <= to_unsigned(j, 9);
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        if resA_rdata /= EXPA(c, j) then e := e + 1; end if;
+        if resB_rdata /= EXPB(c, j) then e := e + 1; end if;
+      end loop;
+
+      if e = 0 then
+        report "OK    : " & NAMES(c) & " latencia = " & integer'image(lat) & " ciclos" severity note;
+      else
+        report "FALLO : " & NAMES(c) & " (" & integer'image(e) & " palabras distintas)" severity error;
+      end if;
+      errs := errs + e;
+    end loop;
+
+    if errs = 0 then
+      report "TODOS LOS CASOS OK" severity note;
+    else
+      report "HAY ERRORES: " & integer'image(errs) severity error;
+    end if;
+    finished <= true;
+    wait;
+  end process;
+
+  watchdog : process
+  begin
+    wait until finished for 100 ms;
+    if not finished then
+      report "TIMEOUT" severity failure;
+    end if;
+    wait;
+  end process;
+
+end sim;

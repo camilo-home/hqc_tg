@@ -21,7 +21,7 @@ architecture rtl of bram_singleport is
   signal ram : ram_type := (others => (others => '0'));
 
   attribute ramstyle : string;
-  attribute ramstyle of ram : signal is "M9K";
+  attribute ramstyle of ram : signal is "M9K, no_rw_check";
 
 begin
   process(clk)
