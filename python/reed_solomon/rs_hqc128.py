@@ -194,6 +194,8 @@ def rs_decode(cw, k=K):
 def main():
     import random
     rnd = random.Random(7)
+	encoded = rs_encode('\x74\xb2\xd3\x52\xcf\x74\xc9\x34\x06\x9c\x9d\xe7\x47\x57\xf5\x05')
+	print(encoded)
 
     # 1) Sin errores
     for _ in range(100):

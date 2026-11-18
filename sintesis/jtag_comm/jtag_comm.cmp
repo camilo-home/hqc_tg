@@ -1,0 +1,14 @@
+	component jtag_comm is
+		port (
+			clk_clk                 : in  std_logic                     := 'X';             -- clk
+			reset_reset_n           : in  std_logic                     := 'X';             -- reset_n
+			uart_avalon_chipselect  : in  std_logic                     := 'X';             -- chipselect
+			uart_avalon_address     : in  std_logic                     := 'X';             -- address
+			uart_avalon_read_n      : in  std_logic                     := 'X';             -- read_n
+			uart_avalon_readdata    : out std_logic_vector(31 downto 0);                    -- readdata
+			uart_avalon_write_n     : in  std_logic                     := 'X';             -- write_n
+			uart_avalon_writedata   : in  std_logic_vector(31 downto 0) := (others => 'X'); -- writedata
+			uart_avalon_waitrequest : out std_logic                                         -- waitrequest
+		);
+	end component jtag_comm;
+

@@ -866,6 +866,7 @@ def t_kem_encaps(hqc, prng, pk):
 
     hdr2("2.1 Aleatoriedad del encapsulado")
     m = prng.read(hqc.k)
+    #m = b'\x74\xb2\xd3\x52\xcf\x74\xc9\x34\x06\x9c\x9d\xe7\x47\x57\xf5\x05'
     salt = prng.read(hqc.salt_sz)
     show_b("m (prng.read(16))", m, "16 B mensaje")
     show_b("salt (prng.read(16))", salt, "16 B")
