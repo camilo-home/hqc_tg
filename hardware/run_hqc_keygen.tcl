@@ -4,16 +4,21 @@ if {[file exists work]} {
 vlib work
 vmap work work
 
+# modulos de aritmetica
 vcom -2008 arithmetic/poly_mul2.vhd
 vcom -2008 arithmetic/sparse_xor.vhd
 
+# memorias
 vcom -2008 memories/position_mem.vhd
 vcom -2008 memories/ram64_sdp.vhd
 vcom -2008 memories/ram64_tdp.vhd
 
+# muestreadores de vectores
+vcom -2008 sampler/samplefxwtmod.vhd
 vcom -2008 sampler/samplefxwtrej.vhd
 vcom -2008 sampler/sample_vect.vhd
 
+# sha3
 vcom -2008 SHA3/theta.vhd
 vcom -2008 SHA3/pi.vhd
 vcom -2008 SHA3/chi.vhd
@@ -24,7 +29,31 @@ vcom -2008 SHA3/keccak_c.vhd
 vcom -2008 SHA3/keccak_sponge_pkg.vhd
 vcom -2008 SHA3/keccak_sponge.vhd
 
-vcom -2008 hqc_keygen.vhd
+# reed-solomon codec
+# encoder
+vcom -2008 reed-solomon-46-16/generic/async_dff.vhd
+vcom -2008 reed-solomon-46-16/generic/no_rst_dff.vhd
+vcom -2008 reed-solomon-46-16/generic/generic_types.vhd
+vcom -2008 reed-solomon-46-16/generic/generic_functions.vhd
+vcom -2008 reed-solomon-46-16/generic/generic_components.vhd
+
+vcom -2008 reed-solomon-46-16/rtl/rs_constants.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_types.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_functions.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_components.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_adder.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_inverse.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_multiplier.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_multiplier_lut.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_remainder_unit.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_encoder.vhd
+
+# reed-muller codec
+# encoder
+vcom -2008 reed-muller-x3/RMEncoder.vhd
+
+vcom -2008 hqc_keygen_v3.vhd
 vcom -2008 tb_hqc_keygen.vhd
 
-vsim -voptargs="+acc" work.tb_hqc_keygen
+vcom -2008 hqc_encaps.vhd
+vcom -2008 tb_hqc_encaps.vhd
