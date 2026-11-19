@@ -39,7 +39,7 @@
 
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE115F29C7
-set_global_assignment -name TOP_LEVEL_ENTITY top_keygen_hw
+set_global_assignment -name TOP_LEVEL_ENTITY keccak_sponge
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 22.1STD.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "03:17:57  NOVEMBER 16, 2026"
 set_global_assignment -name LAST_QUARTUS_VERSION "22.1std.0 Lite Edition"
@@ -50,9 +50,6 @@ set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
 set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
-set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
-set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
-set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_location_assignment PIN_Y2 -to CLOCK_50
 set_location_assignment PIN_M23 -to KEY[0]
 set_location_assignment PIN_M21 -to KEY[1]
@@ -71,12 +68,7 @@ set_location_assignment PIN_E18 -to LEDR[5]
 set_location_assignment PIN_J19 -to LEDR[6]
 set_location_assignment PIN_H19 -to LEDR[7]
 
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CLOCK_50
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to KEY[*]
-set_instance_assignment -name IO_STANDARD "2.5 V" -to LEDG[*]
-set_instance_assignment -name IO_STANDARD "2.5 V" -to LEDR[*]
 
-set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 set_global_assignment -name QIP_FILE jtag_comm/synthesis/jtag_comm.qip
 set_global_assignment -name VHDL_FILE ../hardware/top_wppr_hqc_keygen.vhd
 set_global_assignment -name VHDL_FILE ../hardware/hqc_keygen1.vhd
@@ -96,3 +88,11 @@ set_global_assignment -name VHDL_FILE ../hardware/SHA3/keccak_p.vhd
 set_global_assignment -name VHDL_FILE ../hardware/SHA3/keccak_c.vhd
 set_global_assignment -name VHDL_FILE ../hardware/SHA3/iota.vhd
 set_global_assignment -name VHDL_FILE ../hardware/SHA3/chi.vhd
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CLOCK_50
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to KEY[*]
+set_instance_assignment -name IO_STANDARD "2.5 V" -to LEDG[*]
+set_instance_assignment -name IO_STANDARD "2.5 V" -to LEDR[*]
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

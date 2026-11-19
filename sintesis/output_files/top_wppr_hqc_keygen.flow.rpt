@@ -1,5 +1,5 @@
 Flow report for top_wppr_hqc_keygen
-Mon Nov 16 03:53:02 2026
+Wed Nov 18 15:57:18 2026
 Quartus Prime Version 22.1std.0 Build 915 10/25/2022 SC Lite Edition
 
 
@@ -41,21 +41,21 @@ https://fpgasoftware.intel.com/eula.
 +-------------------------------------------------------------------------------------+
 ; Flow Summary                                                                        ;
 +------------------------------------+------------------------------------------------+
-; Flow Status                        ; Successful - Mon Nov 16 03:52:49 2026          ;
+; Flow Status                        ; Successful - Wed Nov 18 15:57:18 2026          ;
 ; Quartus Prime Version              ; 22.1std.0 Build 915 10/25/2022 SC Lite Edition ;
 ; Revision Name                      ; top_wppr_hqc_keygen                            ;
-; Top-level Entity Name              ; top_keygen_hw                                  ;
+; Top-level Entity Name              ; keccak_sponge                                  ;
 ; Family                             ; Cyclone IV E                                   ;
 ; Device                             ; EP4CE115F29C7                                  ;
 ; Timing Models                      ; Final                                          ;
-; Total logic elements               ; 11,158 / 114,480 ( 10 % )                      ;
-;     Total combinational functions  ; 10,780 / 114,480 ( 9 % )                       ;
-;     Dedicated logic registers      ; 3,812 / 114,480 ( 3 % )                        ;
-; Total registers                    ; 3812                                           ;
-; Total pins                         ; 15 / 529 ( 3 % )                               ;
+; Total logic elements               ; 6,457 / 114,480 ( 6 % )                        ;
+;     Total combinational functions  ; 6,456 / 114,480 ( 6 % )                        ;
+;     Dedicated logic registers      ; 1,693 / 114,480 ( 1 % )                        ;
+; Total registers                    ; 1693                                           ;
+; Total pins                         ; 136 / 529 ( 26 % )                             ;
 ; Total virtual pins                 ; 0                                              ;
-; Total memory bits                  ; 90,501 / 3,981,312 ( 2 % )                     ;
-; Embedded Multiplier 9-bit elements ; 4 / 532 ( < 1 % )                              ;
+; Total memory bits                  ; 0 / 3,981,312 ( 0 % )                          ;
+; Embedded Multiplier 9-bit elements ; 0 / 532 ( 0 % )                                ;
 ; Total PLLs                         ; 0 / 4 ( 0 % )                                  ;
 +------------------------------------+------------------------------------------------+
 
@@ -65,29 +65,36 @@ https://fpgasoftware.intel.com/eula.
 +-------------------+---------------------+
 ; Option            ; Setting             ;
 +-------------------+---------------------+
-; Start date & time ; 11/16/2026 03:40:45 ;
+; Start date & time ; 11/18/2026 15:52:36 ;
 ; Main task         ; Compilation         ;
 ; Revision Name     ; top_wppr_hqc_keygen ;
 +-------------------+---------------------+
 
 
-+---------------------------------------------------------------------------------------------------------------------------------+
-; Flow Non-Default Global Settings                                                                                                ;
-+-------------------------------------+----------------------------------------+---------------------+---------------+------------+
-; Assignment Name                     ; Value                                  ; Default Value       ; Entity Name   ; Section Id ;
-+-------------------------------------+----------------------------------------+---------------------+---------------+------------+
-; COMPILER_SIGNATURE_ID               ; 251422729763611.179481844529875        ; --                  ; --            ; --         ;
-; MAX_CORE_JUNCTION_TEMP              ; 85                                     ; --                  ; --            ; --         ;
-; MIN_CORE_JUNCTION_TEMP              ; 0                                      ; --                  ; --            ; --         ;
-; NOMINAL_CORE_SUPPLY_VOLTAGE         ; 1.2V                                   ; --                  ; --            ; --         ;
-; PARTITION_COLOR                     ; -- (Not supported for targeted family) ; --                  ; top_keygen_hw ; Top        ;
-; PARTITION_FITTER_PRESERVATION_LEVEL ; -- (Not supported for targeted family) ; --                  ; top_keygen_hw ; Top        ;
-; PARTITION_NETLIST_TYPE              ; -- (Not supported for targeted family) ; --                  ; top_keygen_hw ; Top        ;
-; POWER_BOARD_THERMAL_MODEL           ; None (CONSERVATIVE)                    ; --                  ; --            ; --         ;
-; POWER_PRESET_COOLING_SOLUTION       ; 23 MM HEAT SINK WITH 200 LFPM AIRFLOW  ; --                  ; --            ; --         ;
-; PROJECT_OUTPUT_DIRECTORY            ; output_files                           ; --                  ; --            ; --         ;
-; TOP_LEVEL_ENTITY                    ; top_keygen_hw                          ; top_wppr_hqc_keygen ; --            ; --         ;
-+-------------------------------------+----------------------------------------+---------------------+---------------+------------+
++------------------------------------------------------------------------------------------------------------------------------------------------------+
+; Flow Non-Default Global Settings                                                                                                                     ;
++-------------------------------------+-------------------------------------------------------------+---------------------+---------------+------------+
+; Assignment Name                     ; Value                                                       ; Default Value       ; Entity Name   ; Section Id ;
++-------------------------------------+-------------------------------------------------------------+---------------------+---------------+------------+
+; COMPILER_SIGNATURE_ID               ; 251422729763611.179503515605715                             ; --                  ; --            ; --         ;
+; MAX_CORE_JUNCTION_TEMP              ; 85                                                          ; --                  ; --            ; --         ;
+; MIN_CORE_JUNCTION_TEMP              ; 0                                                           ; --                  ; --            ; --         ;
+; MISC_FILE                           ; jtag_comm/synthesis/../jtag_comm.cmp                        ; --                  ; --            ; --         ;
+; MISC_FILE                           ; jtag_comm/synthesis/../../jtag_comm.qsys                    ; --                  ; --            ; --         ;
+; NOMINAL_CORE_SUPPLY_VOLTAGE         ; 1.2V                                                        ; --                  ; --            ; --         ;
+; PARTITION_COLOR                     ; -- (Not supported for targeted family)                      ; --                  ; keccak_sponge ; Top        ;
+; PARTITION_FITTER_PRESERVATION_LEVEL ; -- (Not supported for targeted family)                      ; --                  ; keccak_sponge ; Top        ;
+; PARTITION_NETLIST_TYPE              ; -- (Not supported for targeted family)                      ; --                  ; keccak_sponge ; Top        ;
+; POWER_BOARD_THERMAL_MODEL           ; None (CONSERVATIVE)                                         ; --                  ; --            ; --         ;
+; POWER_PRESET_COOLING_SOLUTION       ; 23 MM HEAT SINK WITH 200 LFPM AIRFLOW                       ; --                  ; --            ; --         ;
+; PROJECT_OUTPUT_DIRECTORY            ; output_files                                                ; --                  ; --            ; --         ;
+; SLD_FILE                            ; jtag_comm/synthesis/jtag_comm.regmap                        ; --                  ; --            ; --         ;
+; SLD_FILE                            ; jtag_comm/synthesis/jtag_comm.debuginfo                     ; --                  ; --            ; --         ;
+; SLD_INFO                            ; QSYS_NAME jtag_comm HAS_SOPCINFO 1 GENERATION_ID 1794859745 ; --                  ; jtag_comm     ; --         ;
+; SOPCINFO_FILE                       ; jtag_comm/synthesis/../../jtag_comm.sopcinfo                ; --                  ; --            ; --         ;
+; SYNTHESIS_ONLY_QIP                  ; On                                                          ; --                  ; --            ; --         ;
+; TOP_LEVEL_ENTITY                    ; keccak_sponge                                               ; top_wppr_hqc_keygen ; --            ; --         ;
++-------------------------------------+-------------------------------------------------------------+---------------------+---------------+------------+
 
 
 +--------------------------------------------------------------------------------------------------------------------------+
@@ -95,12 +102,9 @@ https://fpgasoftware.intel.com/eula.
 +----------------------+--------------+-------------------------+---------------------+------------------------------------+
 ; Module Name          ; Elapsed Time ; Average Processors Used ; Peak Virtual Memory ; Total CPU Time (on all processors) ;
 +----------------------+--------------+-------------------------+---------------------+------------------------------------+
-; Analysis & Synthesis ; 00:01:05     ; 1.0                     ; 564 MB              ; 00:01:27                           ;
-; MIF/HEX Update       ; 00:00:02     ; 1.0                     ; 714 MB              ; 00:00:01                           ;
-; Fitter               ; 00:03:57     ; 1.1                     ; 1751 MB             ; 00:07:50                           ;
-; Assembler            ; 00:00:04     ; 1.0                     ; 410 MB              ; 00:00:04                           ;
-; Timing Analyzer      ; 00:00:08     ; 2.1                     ; 751 MB              ; 00:00:12                           ;
-; Total                ; 00:05:16     ; --                      ; --                  ; 00:09:34                           ;
+; Analysis & Synthesis ; 00:00:25     ; 1.0                     ; 527 MB              ; 00:00:44                           ;
+; Fitter               ; 00:04:15     ; 1.1                     ; 1545 MB             ; 00:06:20                           ;
+; Total                ; 00:04:40     ; --                      ; --                  ; 00:07:04                           ;
 +----------------------+--------------+-------------------------+---------------------+------------------------------------+
 
 
@@ -110,10 +114,7 @@ https://fpgasoftware.intel.com/eula.
 ; Module Name          ; Machine Hostname      ; OS Name        ; OS Version ; Processor type ;
 +----------------------+-----------------------+----------------+------------+----------------+
 ; Analysis & Synthesis ; camilo-Aspire-A515-43 ; Ubuntu 22.04.5 ; 22         ; x86_64         ;
-; MIF/HEX Update       ; camilo-Aspire-A515-43 ; Ubuntu 22.04.5 ; 22         ; x86_64         ;
 ; Fitter               ; camilo-Aspire-A515-43 ; Ubuntu 22.04.5 ; 22         ; x86_64         ;
-; Assembler            ; camilo-Aspire-A515-43 ; Ubuntu 22.04.5 ; 22         ; x86_64         ;
-; Timing Analyzer      ; camilo-Aspire-A515-43 ; Ubuntu 22.04.5 ; 22         ; x86_64         ;
 +----------------------+-----------------------+----------------+------------+----------------+
 
 
@@ -121,10 +122,7 @@ https://fpgasoftware.intel.com/eula.
 ; Flow Log ;
 ------------
 quartus_map --read_settings_files=on --write_settings_files=off HQC -c top_wppr_hqc_keygen
-quartus_cdb HQC -c top_wppr_hqc_keygen --update_mif
-quartus_fit --read_settings_files=on --write_settings_files=off HQC -c top_wppr_hqc_keygen
-quartus_asm --read_settings_files=on --write_settings_files=off HQC -c top_wppr_hqc_keygen
-quartus_sta HQC -c top_wppr_hqc_keygen
+quartus_fit --read_settings_files=off --write_settings_files=off HQC -c top_wppr_hqc_keygen
 
 
 

@@ -1,69 +1,5 @@
 
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|state
-Name state.S_DONE state.S_O_SEND state.S_O_ADDR state.S_XOR state.S_X state.S_MUL state.S_Y state.S_C3 state.S_C2 state.S_C1 state.S_SEED state.S_IDLE 
-state.S_IDLE 0 0 0 0 0 0 0 0 0 0 0 0 
-state.S_SEED 0 0 0 0 0 0 0 0 0 0 1 1 
-state.S_C1 0 0 0 0 0 0 0 0 0 1 0 1 
-state.S_C2 0 0 0 0 0 0 0 0 1 0 0 1 
-state.S_C3 0 0 0 0 0 0 0 1 0 0 0 1 
-state.S_Y 0 0 0 0 0 0 1 0 0 0 0 1 
-state.S_MUL 0 0 0 0 0 1 0 0 0 0 0 1 
-state.S_X 0 0 0 0 1 0 0 0 0 0 0 1 
-state.S_XOR 0 0 0 1 0 0 0 0 0 0 0 1 
-state.S_O_ADDR 0 0 1 0 0 0 0 0 0 0 0 1 
-state.S_O_SEND 0 1 0 0 0 0 0 0 0 0 0 1 
-state.S_DONE 1 0 0 0 0 0 0 0 0 0 0 1 
-
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|fs
-Name fs.FS_DOM fs.FS_SEND fs.FS_CMD fs.FS_IDLE 
-fs.FS_IDLE 0 0 0 0 
-fs.FS_CMD 0 0 1 1 
-fs.FS_SEND 0 1 0 1 
-fs.FS_DOM 1 0 0 1 
-
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|sparse_xor:u_xor|state
-Name state.S_DONE state.S_WR state.S_RD1 state.S_RD0 state.S_L1 state.S_L0 state.S_IDLE 
-state.S_IDLE 0 0 0 0 0 0 0 
-state.S_L0 0 0 0 0 0 1 1 
-state.S_L1 0 0 0 0 1 0 1 
-state.S_RD0 0 0 0 1 0 0 1 
-state.S_RD1 0 0 1 0 0 0 1 
-state.S_WR 0 1 0 0 0 0 1 
-state.S_DONE 1 0 0 0 0 0 1 
-
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|poly_mul2:u_mul|state
-Name state.S_DONE state.S_FOLD state.S_ACC state.S_LP1 state.S_LP0 state.S_IDLE 
-state.S_IDLE 0 0 0 0 0 0 
-state.S_LP0 0 0 0 0 1 1 
-state.S_LP1 0 0 0 1 0 1 
-state.S_ACC 0 0 1 0 0 1 
-state.S_FOLD 0 1 0 0 0 1 
-state.S_DONE 1 0 0 0 0 1 
-
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|sample_vect:u_vect|fsm
-Name fsm.S_DONE fsm.S_FLUSH fsm.S_RUN fsm.S_IDLE 
-fsm.S_IDLE 0 0 0 0 
-fsm.S_RUN 0 0 1 1 
-fsm.S_FLUSH 0 1 0 1 
-fsm.S_DONE 1 0 0 1 
-
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|samplefxwtrej:u_samp|fsm
-Name fsm.DONE fsm.CLEAN_END fsm.CLEAN fsm.S_DRAIN fsm.S_NEXT fsm.S_BMCHK fsm.S_BMRD fsm.S_FIX fsm.S_RED fsm.S_CHK fsm.S_TAKE fsm.S_GET fsm.IDLE 
-fsm.IDLE 0 0 0 0 0 0 0 0 0 0 0 0 0 
-fsm.S_GET 0 0 0 0 0 0 0 0 0 0 0 1 1 
-fsm.S_TAKE 0 0 0 0 0 0 0 0 0 0 1 0 1 
-fsm.S_CHK 0 0 0 0 0 0 0 0 0 1 0 0 1 
-fsm.S_RED 0 0 0 0 0 0 0 0 1 0 0 0 1 
-fsm.S_FIX 0 0 0 0 0 0 0 1 0 0 0 0 1 
-fsm.S_BMRD 0 0 0 0 0 0 1 0 0 0 0 0 1 
-fsm.S_BMCHK 0 0 0 0 0 1 0 0 0 0 0 0 1 
-fsm.S_NEXT 0 0 0 0 1 0 0 0 0 0 0 0 1 
-fsm.S_DRAIN 0 0 0 1 0 0 0 0 0 0 0 0 1 
-fsm.CLEAN 0 0 1 0 0 0 0 0 0 0 0 0 1 
-fsm.CLEAN_END 0 1 0 0 0 0 0 0 0 0 0 0 1 
-fsm.DONE 1 0 0 0 0 0 0 0 0 0 0 0 1 
-
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|keccak_sponge:u_sponge|ret_state
+State Machine - |keccak_sponge|ret_state
 Name ret_state.S_SQUEEZE ret_state.S_PWAIT ret_state.S_PSTART ret_state.S_PAD2 ret_state.S_PAD1 ret_state.S_ABSORB ret_state.S_CMD 
 ret_state.S_CMD 0 0 0 0 0 0 0 
 ret_state.S_ABSORB 0 0 0 0 0 1 1 
@@ -73,7 +9,7 @@ ret_state.S_PSTART 0 0 1 0 0 0 1
 ret_state.S_PWAIT 0 1 0 0 0 0 1 
 ret_state.S_SQUEEZE 1 0 0 0 0 0 1 
 
-State Machine - |top_keygen_hw|hqc_keygen:u_keygen|keccak_sponge:u_sponge|state
+State Machine - |keccak_sponge|state
 Name state.S_SQUEEZE state.S_PWAIT state.S_PSTART state.S_PAD2 state.S_PAD1 state.S_ABSORB state.S_CMD 
 state.S_CMD 0 0 0 0 0 0 0 
 state.S_ABSORB 0 0 0 0 0 1 1 

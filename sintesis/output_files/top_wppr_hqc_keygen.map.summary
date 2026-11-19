@@ -1,14 +1,14 @@
-Analysis & Synthesis Status : Successful - Mon Nov 16 03:41:52 2026
+Analysis & Synthesis Status : Successful - Wed Nov 18 15:53:02 2026
 Quartus Prime Version : 22.1std.0 Build 915 10/25/2022 SC Lite Edition
 Revision Name : top_wppr_hqc_keygen
-Top-level Entity Name : top_keygen_hw
+Top-level Entity Name : keccak_sponge
 Family : Cyclone IV E
-Total logic elements : 11,780
-    Total combinational functions : 10,779
-    Dedicated logic registers : 3,812
-Total registers : 3812
-Total pins : 15
+Total logic elements : 6,456
+    Total combinational functions : 6,456
+    Dedicated logic registers : 1,693
+Total registers : 1693
+Total pins : 136
 Total virtual pins : 0
-Total memory bits : 90,501
-Embedded Multiplier 9-bit elements : 4
+Total memory bits : 0
+Embedded Multiplier 9-bit elements : 0
 Total PLLs : 0

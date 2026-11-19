@@ -79,7 +79,7 @@ architecture rtl of hqc_encaps is
   -- Constantes
   -- --------------------------------------------------------------------------
   constant WORDS      : integer := 277;                 -- palabras de un vector denso (N = 17669)
-  constant V_WORDS    : integer := 277;                 -- palabras de v (N1N2 = 17664 bits)
+  constant V_WORDS    : integer := 276;                 -- palabras de v (N1N2 = 17664 bits)
   constant KEY_LAST   : integer := 284;                 -- ultima palabra de la ingesta
   constant EK_MSG_LAST: integer := 280;                 -- ek||01 = 2242 B = 281 palabras
   constant H_BYTES    : integer := WORDS * 8;           -- 2216 B que consume sample_vect
@@ -108,7 +108,7 @@ architecture rtl of hqc_encaps is
   begin
     case seg is
       when SEG_SS => return 3;
-      when SEG_V  => return V_WORDS - 1;       -- 276
+      when SEG_V  => return V_WORDS - 1;       -- 275
       when SEG_U  => return WORDS - 1;         -- 276
       when others => return 1;                 -- salt
     end case;
@@ -312,7 +312,7 @@ begin
               o_start_codeword => rs_o_start, o_valid => rs_o_valid, o_symbol => rs_o_symbol);
 
   u_rm : entity work.RMEncoder
-    generic map (m => 7, rep => 3, generator_matrix_01 => true)
+    generic map (m => 7, rep => 3, generator_matrix_01 => false)
     port map (data_in => rm_byte, data_out => rm_dout);
 
   -- bancos de posiciones
