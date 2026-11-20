@@ -28,5 +28,6 @@ Pendientes del documento:
     - Marco teorico mas detallado de hqc y todas sus funciones
     - Capitulo "Desarrollo" con desglose modulo a modulo y su logica/algoritmo de funcionamiento
     - Mencionar los modulos reutilizados y adaptados de otros repositorios (codecs)
+    - Orden de bytes dentro de las direcciones de memoria de las bram, reed-solomon pide b0 a b15 de mensaje y entrega b0..b15..p0..p29, pero en memoria la direccion 0:(63 downto 0) debe contener la parte baja de de RMx3(p29)
     - Describir la transcripcion del algoritmo a flujo de datos en los 3 modulos top
     - Metricas y estadisticas de desempeño de cada modulo y de los 3 top como ciclos, velcidad maxima de reloj, bits de memoria, LEs, LUTs. (LUT, FF, BRAM como en el paper de antecedente). Latencia y tiempo (segun ciclos y freq maxima de reloj)

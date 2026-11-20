@@ -43,6 +43,7 @@ use WORK.RS_TYPES.all;
 
 entity hqc_encaps is
   generic(
+    RM_GEN_01         : boolean := false;  -- generator_matrix_01 de rm_encoder/rm_decoder (HQC: false); mismo valor en ambos
     WT_R             : integer := 75;     -- peso de r1 y r2 (HQC-128)
     WT_E             : integer := 75;     -- peso de e
     RS_OUT_REVERSED  : boolean := true;   -- true: el RS emite el simbolo cw[45] primero (orden inverso)
@@ -311,8 +312,8 @@ begin
               o_end_codeword => rs_o_end, o_error => rs_o_error, o_in_ready => rs_o_in_ready,
               o_start_codeword => rs_o_start, o_valid => rs_o_valid, o_symbol => rs_o_symbol);
 
-  u_rm : entity work.RMEncoder
-    generic map (m => 7, rep => 3, generator_matrix_01 => false)
+  u_rm : entity work.rm_encoder
+    generic map (m => 7, rep => 3, generator_matrix_01 => RM_GEN_01)
     port map (data_in => rm_byte, data_out => rm_dout);
 
   -- bancos de posiciones

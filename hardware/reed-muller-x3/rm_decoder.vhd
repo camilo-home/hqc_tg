@@ -1,16 +1,3 @@
---! @author	Salvatore Barone <salvator.barone@studenti.unina.it>
---!			Alfonso Di Martino <alf.dimartino@studenti.unina.it>
---!			Pietro Liguori <pi.liguori@studenti.unina.it>
---! @date 13-04-2017
---! @file RMDecoder.vhd - decodificador de maxima verosimilitud (ML) para codigos de Reed-Muller RM(1, m) con repeticion.
---! @copyright
---! This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as
---! published by the Free Software Foundation; either version 3 of the License, or any later version.
---! This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
---! of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
---! You should have received a copy of the GNU General Public License along with this program; if not, write to the Free
---! Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-
 -- Changelog
 -- 13-04-2017 .. 06-11-2026 : version original por mayoria (majority-logic, Reed), con el generic "rep".
 -- 19-11-2026 : Reescrito el nucleo de decision. El decodificador por mayoria NO equivale al decodificador de HQC:
@@ -21,8 +8,12 @@
 --				  2) transformada de Hadamard rapida de 2^m puntos, m etapas: s0 = a+b, s1 = a-b, s = s0 & s1
 --				  3) s[0] = s[0] - rep*2^(m-1)
 --				  4) simbolo = indice del mayor |s[j]| (empate -> indice MENOR); si s[j] > 0, se suma 2^m
---				Misma entidad (generics y puertos) que la version anterior. Latencia: 2m+2 ciclos (16 para m=7),
---				un bloque por ciclo. No depende de GenericBuffer, ButterflyCell ni MajorityVoter/.
+--				Mismos generics que la version anterior. Latencia: 2m+2 ciclos (16 para m=7), un bloque por ciclo.
+--				No depende de GenericBuffer, ButterflyCell ni MajorityVoter/.
+-- 19-11-2026 : Agregado handshake valid/ready (in_valid, in_ready, out_valid, out_ready).
+--				Todo el pipeline avanza con un enable global ("advance"): si hay un simbolo valido en la salida
+--				y el consumidor no esta listo (out_ready = '0'), el pipeline entero se congela y no se pierde nada.
+--				Si la salida esta vacia o se esta consumiendo, avanza y acepta una entrada por ciclo.
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -33,24 +24,37 @@ use ieee.numeric_std.all;
 --! @param m							RM(1,m): salida de m+1 bits, palabra de 2^m bits
 --! @param rep							numero de copias de la palabra (HQC-128: 3). data_in tiene rep*2^m bits;
 --!										la copia c ocupa data_in((c+1)*2^m-1 downto c*2^m)
---! @param generator_matrix_01			mismo significado que en RMEncoder. HQC usa false (tabla HQC_RM_TAB).
+--! @param generator_matrix_01			mismo significado que en rm_encoder. HQC usa false (tabla HQC_RM_TAB).
 --!										Con true el bit m de la salida se corrige con la paridad de los otros m bits.
 --! @param clock						reloj
 --! @param reset_n						reset asincrono, activo bajo
---! @param data_in						rep*2^m bits (se muestrea cada ciclo)
+--! @param in_valid						'1' = data_in contiene un bloque. Se acepta en el flanco de reloj en que
+--!										in_valid = '1' e in_ready = '1'. Mientras in_ready = '0', data_in e in_valid
+--!										deben mantenerse estables.
+--! @param in_ready						'1' = el decodificador acepta un bloque este ciclo. Depende combinacionalmente
+--!										de out_ready (in_ready = not out_valid or out_ready).
+--! @param data_in						rep*2^m bits
+--! @param out_valid					'1' = data_out contiene un simbolo valido (2m+2 ciclos despues de aceptar el
+--!										bloque, si no hubo congelamientos). Se mantiene mientras out_ready = '0'.
+--! @param out_ready					'1' = el consumidor toma data_out en este flanco de reloj (out_valid = '1' y
+--!										out_ready = '1'). Si no se necesita contrapresion, conectar a '1'.
 --! @param data_out						m+1 bits: bit m = a_m (complemento), bits m-1..0 = a_{m-1}..a_0.
---!										Valido 2m+2 ciclos despues de data_in.
-entity RMDecoder is
+--!										Los simbolos salen en el mismo orden en que entraron los bloques.
+entity rm_decoder is
 	Generic (	m 					: 		natural := 7;
 				rep					:		natural := 3;
-				generator_matrix_01 : 		boolean := true);
+				generator_matrix_01 : 		boolean := false);
     Port (		clock 				: in	std_logic;
 				reset_n 			: in	std_logic;
+				in_valid			: in	std_logic;
+				in_ready			: out	std_logic;
 				data_in 			: in 	std_logic_vector (rep*2**m-1 downto 0);
+				out_valid			: out	std_logic;
+				out_ready			: in	std_logic;
            		data_out 			: out	std_logic_vector (m downto 0));
-end RMDecoder;
+end rm_decoder;
 
-architecture Rtl of RMDecoder is
+architecture Rtl of rm_decoder is
 
 	-- logaritmo en base 2 por exceso
 	function ceil_log2 (n : natural) return natural is
@@ -100,7 +104,33 @@ architecture Rtl of RMDecoder is
 	type lvl_t is array (0 to m) of lvl_row_t;
 	signal lv : lvl_t;
 
+	-- handshake: etapas de pipeline = m (FHT) + 1 (abs) + m (arbol) + 1 (salida)
+	constant lat : natural := 2*m + 2;
+	-- vld(i) = la etapa i del pipeline (0 = salida de la etapa 1 de la FHT, lat-1 = registro de salida) tiene un bloque valido
+	signal vld : std_logic_vector(0 to lat-1);
+	-- '1' = el pipeline avanza este ciclo (enable de todos los registros de datos)
+	signal advance : std_logic;
+
 begin
+
+	-- ---------------------------------------------------------------
+	-- Handshake. El pipeline avanza si la salida esta vacia (o con una burbuja) o si el consumidor la toma.
+	-- Los bits de validez viajan en paralelo con los datos y se congelan con el mismo enable.
+	-- ---------------------------------------------------------------
+	advance   <= (not vld(lat-1)) or out_ready;
+	in_ready  <= advance;
+	out_valid <= vld(lat-1);
+
+	valid_pipe : process (clock, reset_n)
+	begin
+		if reset_n = '0' then
+			vld <= (others => '0');
+		elsif rising_edge(clock) then
+			if advance = '1' then
+				vld <= in_valid & vld(0 to lat-2);
+			end if;
+		end if;
+	end process;
 
 	-- ---------------------------------------------------------------
 	-- Etapa 0: s[k] = numero de copias con un '1' en la posicion k
@@ -121,7 +151,7 @@ begin
 				for k in 0 to n_pts-1 loop
 					fht(s)(k) <= (others => '0');
 				end loop;
-			elsif rising_edge(clock) then
+			elsif rising_edge(clock) and advance = '1' then
 				for p in 0 to n_pts/2-1 loop
 					a := resize(fht(s-1)(2*p)(stage_w(s-1)-1 downto 0), stage_w(s));
 					b := resize(fht(s-1)(2*p+1)(stage_w(s-1)-1 downto 0), stage_w(s));
@@ -146,7 +176,7 @@ begin
 			for j in 0 to n_pts-1 loop
 				lv(0)(j) <= (others => '0');
 			end loop;
-		elsif rising_edge(clock) then
+		elsif rising_edge(clock) and advance = '1' then
 			for j in 0 to n_pts-1 loop
 				v := fht(m)(j);
 				if j = 0 then
@@ -180,7 +210,7 @@ begin
 				for q in 0 to n_pts/2**l-1 loop
 					lv(l)(q) <= (others => '0');
 				end loop;
-			elsif rising_edge(clock) then
+			elsif rising_edge(clock) and advance = '1' then
 				for q in 0 to n_pts/2**l-1 loop
 					if unsigned(lv(l-1)(2*q+1)(abs_w-1 downto 0)) > unsigned(lv(l-1)(2*q)(abs_w-1 downto 0)) then
 						e := lv(l-1)(2*q+1);
@@ -205,7 +235,7 @@ begin
 	begin
 		if reset_n = '0' then
 			data_out <= (others => '0');
-		elsif rising_edge(clock) then
+		elsif rising_edge(clock) and advance = '1' then
 			idx := lv(m)(0)(abs_w+m downto abs_w+1);
 			sg  := lv(m)(0)(abs_w);
 			if generator_matrix_01 then

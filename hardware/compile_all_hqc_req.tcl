@@ -19,15 +19,15 @@ vcom -2008 sampler/samplefxwtrej.vhd
 vcom -2008 sampler/sample_vect.vhd
 
 # sha3
-vcom -2008 SHA3/theta.vhd
-vcom -2008 SHA3/pi.vhd
-vcom -2008 SHA3/chi.vhd
-vcom -2008 SHA3/rho.vhd
-vcom -2008 SHA3/iota.vhd
-vcom -2008 SHA3/keccak_p.vhd
-vcom -2008 SHA3/keccak_c.vhd
-vcom -2008 SHA3/keccak_sponge_pkg.vhd
-vcom -2008 SHA3/keccak_sponge.vhd
+vcom -2008 sha3/theta.vhd
+vcom -2008 sha3/pi.vhd
+vcom -2008 sha3/chi.vhd
+vcom -2008 sha3/rho.vhd
+vcom -2008 sha3/iota.vhd
+vcom -2008 sha3/keccak_p.vhd
+vcom -2008 sha3/keccak_c.vhd
+vcom -2008 sha3/keccak_sponge_pkg.vhd
+vcom -2008 sha3/keccak_sponge.vhd
 
 # reed-solomon codec
 # generic
@@ -73,10 +73,15 @@ vcom -2008 reed-solomon-46-16/rs_decoder.vhd
 
 # reed-muller codec
 # encoder
-vcom -2008 reed-muller-x3/RMEncoder.vhd
+vcom -2008 reed-muller-x3/rm_encoder.vhd
+vcom -2008 reed-muller-x3/rm_decoder.vhd
 
-vcom -2008 hqc_keygen_v3.vhd
-vcom -2008 tb_hqc_keygen.vhd
+# modulos hqc top
+#vcom -2008 hqc_top/hqc_keygen/hqc_keygen.vhd
+#vcom -2008 hqc_top/hqc_keygen/tb_hqc_keygen.vhd
 
-vcom -2008 hqc_encaps.vhd
-vcom -2008 tb_hqc_encaps.vhd
+#vcom -2008 hqc_top/hqc_encaps/hqc_encaps.vhd
+#vcom -2008 hqc_top/hqc_encaps/tb_hqc_encaps.vhd
+
+#vcom -2008 hqc_top/hqc_decaps/hqc_decaps.vhd
+#vcom -2008 hqc_top/hqc_decaps/tb_hqc_decaps.vhd

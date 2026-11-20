@@ -135,15 +135,15 @@ use ieee.numeric_std.all;
 --! <tr><td>x"1f"</td><td>x"9669"</td></tr>
 --! </table>
 --!
-entity RMEncoder is
+entity rm_encoder is
 	Generic (	m 					: 		natural := 7;
 				rep					:		natural := 3;
 				generator_matrix_01 : 		boolean := true);
     Port (		data_in 			: in 	std_logic_vector (m downto 0);
            		data_out 			: out 	std_logic_vector (rep*2**m-1 downto 0));
-end RMEncoder;
+end rm_encoder;
 
-architecture Structural of RMEncoder is
+architecture Structural of rm_encoder is
 
 	-- tipi matrice usati nel seguito
 	type std_logic_matrix1 is array (natural range <>) of std_logic_vector(2**m-1 downto 0);
