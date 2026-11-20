@@ -1,0 +1,32 @@
+Pendientes del proyecto:
+
+- Verificar decoder reed muller corregido
+- Validar entradas y salidas reed solomon decoder
+- Generar hqc decaps y establecer visualizacion de K' y Krej
+- Implementacion del comparador para verificar pares de K y c_KEM
+
+- Comunicacion JTAG Avalon ST
+
+
+Pendientes del documento:
+
+- Correcciones diagrama data_flow
+    - Cambiar inc_seed por Entropy Input y su seed subsiguiente segun los kat para aclaracion del flujo durante test vectors
+    - Orden de concatenacion en la sk o dk_KEM durante el empaquetamiento de claves en keygen
+    - Longitud de Cm corresponde a n1*n2 = 2208 bytes en Condificacion concatenada de encaps
+    - Longitud de v queda truncado a longitud de Cm, es decir 2208 bytes, corregir label de longitud
+    - Longitud de c_PKE es 4417 bytes y c_KEM = ct es de 4433 bytes
+    - Corregir orden de concatenacion en encapsulacion de encaps, es u || v
+    - Corregir orden de concatenacion en Descifrado de decaps, es u || v lo recibido
+    - Corregir longitud de vectores desempaquetados en decaps, recordar que v esta truncado a 2208 bytes
+    - En la salida de pke_encript corregir longitud de c_PKE' y c_KEM'
+    - En rechazo de K' la entrada del sha3 J tiene incorrecta la longitud, ingresa el c_KEM que le entro al modulo y que mide 4433 bytes
+    - Crear una nueva version adaptada a los nombres de flujos y modulos de la implementacion hardware, conservar la corregida de python (basarse en la descripcion del hqc_128.py descriptivo)
+
+- Contenido pensado para el documento:
+    - Copiar o mejorar resumen, introduccion, objetivos, antecedentes, justificacion, contextualizacion del anteproyecto.
+    - Marco teorico mas detallado de hqc y todas sus funciones
+    - Capitulo "Desarrollo" con desglose modulo a modulo y su logica/algoritmo de funcionamiento
+    - Mencionar los modulos reutilizados y adaptados de otros repositorios (codecs)
+    - Describir la transcripcion del algoritmo a flujo de datos en los 3 modulos top
+    - Metricas y estadisticas de desempeño de cada modulo y de los 3 top como ciclos, velcidad maxima de reloj, bits de memoria, LEs, LUTs. (LUT, FF, BRAM como en el paper de antecedente). Latencia y tiempo (segun ciclos y freq maxima de reloj)

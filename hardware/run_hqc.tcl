@@ -30,13 +30,24 @@ vcom -2008 SHA3/keccak_sponge_pkg.vhd
 vcom -2008 SHA3/keccak_sponge.vhd
 
 # reed-solomon codec
-# encoder
-vcom -2008 reed-solomon-46-16/generic/async_dff.vhd
-vcom -2008 reed-solomon-46-16/generic/no_rst_dff.vhd
+# generic
 vcom -2008 reed-solomon-46-16/generic/generic_types.vhd
 vcom -2008 reed-solomon-46-16/generic/generic_functions.vhd
+vcom -2008 reed-solomon-46-16/generic/async_dff.vhd
+vcom -2008 reed-solomon-46-16/generic/async_dff_gen_rst.vhd
+vcom -2008 reed-solomon-46-16/generic/config_dff_array.vhd
+vcom -2008 reed-solomon-46-16/generic/d_sync_flop.vhd
+vcom -2008 reed-solomon-46-16/generic/no_rst_dff.vhd
+vcom -2008 reed-solomon-46-16/generic/sync_dff_gen_rst.vhd
+vcom -2008 reed-solomon-46-16/generic/async_dff_array.vhd
+vcom -2008 reed-solomon-46-16/generic/sync_dff_array.vhd
+vcom -2008 reed-solomon-46-16/generic/reg_fifo_array.vhd
+vcom -2008 reed-solomon-46-16/generic/reg_fifo.vhd
 vcom -2008 reed-solomon-46-16/generic/generic_components.vhd
+vcom -2008 reed-solomon-46-16/generic/sync_ld_dff.vhd
+vcom -2008 reed-solomon-46-16/generic/flop_cascade.vhd
 
+# rtl
 vcom -2008 reed-solomon-46-16/rtl/rs_constants.vhd
 vcom -2008 reed-solomon-46-16/rtl/rs_types.vhd
 vcom -2008 reed-solomon-46-16/rtl/rs_functions.vhd
@@ -45,8 +56,20 @@ vcom -2008 reed-solomon-46-16/rtl/rs_adder.vhd
 vcom -2008 reed-solomon-46-16/rtl/rs_inverse.vhd
 vcom -2008 reed-solomon-46-16/rtl/rs_multiplier.vhd
 vcom -2008 reed-solomon-46-16/rtl/rs_multiplier_lut.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_reduce_adder.vhd
 vcom -2008 reed-solomon-46-16/rtl/rs_remainder_unit.vhd
-vcom -2008 reed-solomon-46-16/rtl/rs_encoder.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_full_multiplier.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_full_multiplier_core.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_syndrome_subunit.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_syndrome.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_berlekamp_massey.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_chien_forney.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_chien.vhd
+vcom -2008 reed-solomon-46-16/rtl/rs_forney.vhd
+
+# rs top
+vcom -2008 reed-solomon-46-16/rs_encoder.vhd
+vcom -2008 reed-solomon-46-16/rs_decoder.vhd
 
 # reed-muller codec
 # encoder
