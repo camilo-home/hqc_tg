@@ -1,37 +1,40 @@
 -- ============================================================================
--- hqc_decaps : HQC-128 Decaps (KEM)  -  ss = (re-cifrado coincide) ? kk' : k_rej
+-- hqc_decaps : HQC-128 KEM.Decaps(dk, ct) -> ss
 --
 --   entrada dk  (dk_valid/dk_ready/dk_data), 291 palabras de 64 bits = EXACTAMENTE la salida del keygen:
---                 0..280   ek  (seed_ek 32 B || s 2209 B, relleno a 0)
---                 281..284 seed_dk (32 B)      285..286 sigma (16 B)      287..290 seed_kem (32 B, se ignora)
+--                 0..280   ek  (seed_ek 32 B || s 2209 B; la palabra 280 solo lleva 1 byte)
+--                 281..284 seed_dk (32 B)     285..286 sigma (16 B)     287..290 seed_kem (32 B, se ignora)
 --   entrada ct  (ct_valid/ct_ready/ct_data), 555 palabras, partes alineadas a palabra, orden u | v | salt:
---                 0..276   u (2209 B; la palabra 276 solo lleva 1 byte, relleno a 0)
---                 277..552 v (2208 B)          553..554 salt (16 B)
---   dk y ct se ingieren a la vez (dos puertos independientes). start (pulso) solo con ready='1'.
+--                 0..276   u (2209 B; la palabra 276 solo lleva 1 byte)
+--                 277..552 v (2208 B)         553..554 salt (16 B)
+--   dk y ct se ingieren a la vez (puertos independientes). start (pulso) solo con ready='1'.
 --   salida  : ss (32 B) en 4 palabras por out_valid/out_ready; out_last en la ultima. done = pulso al terminar.
 --   Bytes en palabras: byte 0 en los bits [7:0] (igual que el sponge).
 --
--- Una micro-operacion a la vez (como keygen/encaps), con las ESPERAS solapadas con la ingesta:
---   S_INGEST  dk: las 281 palabras de ek se REENVIAN al puerto key_* de hqc_encaps (que las guarda y espera
---             m' y salt); seed_dk y sigma a registros. ct: u -> RAM ct_u, v -> RAM ct_v, salt -> registros.
---   S_Y       SHAKE256(seed_dk||01), sin limite -> sampler rej -> y (66 posiciones); abort al terminar
---   S_MUL     poly_mul2 (DUAL=false): res = y*u
---   S_DEC     cm = v xor res (al vuelo, 6 palabras por bloque, bloques 45..0) -> rm_decoder -> 46 simbolos
---             -> rs_decoder (entra cw[45]..cw[0]) -> m' (los 16 primeros simbolos son m[15]..m[0])
---   S_INJ     m' (2 palabras) y salt (2) al puerto key_* de hqc_encaps: re-cifrado completo (tmp_h, SHA3-512,
---             h, r2/e/r1, poly_mul2, sparse_xor, RS/RM)
---   S_REENC   se consume la salida de hqc_encaps (ss'|u'|v'|salt' en el orden de su OUT_SEQ, identificado por
---             out_part) y se compara palabra a palabra con el ct recibido (sin salida anticipada).
---             u[276] solo compara el byte bajo (el resto de la palabra es relleno).
---   S_KREJ    k_rej = SHA3-256(tmp_h || sigma || ct || 03), 4482 B. ct = u||v||salt como BYTES continuos:
---             un realineador de bytes (acumulador de 15 B) une los trozos (u acaba en el byte 2208).
---   S_OUT     ss = match ? kk' : k_rej
+-- Reparto de trabajo
+--   capa KEM (este modulo, un unico sponge propio, una operacion a la vez):
+--       tmp_h = SHA3-256(ek||01) | y = rej(SHAKE256(seed_dk||01)) | (kk', theta') = SHA3-512(tmp_h||m'||salt||00)
+--       k_rej = SHA3-256(tmp_h||sigma||ct||03)
+--   capa PKE (hqc_encrypt, con su propio sponge): (u', v') = Encrypt(ek, m', theta')
+--
+-- Secuencia
+--   ST_INGEST            dk: las 281 palabras de ek se REPARTEN a la vez (tee) al sponge (hash de ek) y a la entrada de
+--                        hqc_encrypt, que las guarda; seed_dk y sigma a registros. ct: u -> RAM, v -> RAM, salt -> registros.
+--                        La salida del hash (tmp_h) se captura sola cuando el sponge termina.
+--   ST_SAMPLE_Y          SHAKE256(seed_dk||01), sin limite -> sampler rej -> y (66 posiciones); abort
+--   ST_START/WAIT_POLY_MUL  res = y * u   (poly_mul2, DUAL=false)
+--   ST_DECODE_M_PRIME    cm = v xor res (al vuelo), bloques 45..0 -> rm_decoder -> 46 simbolos -> rs_decoder -> m'
+--   ST_HASH_G            SHA3-512(tmp_h||m'||salt||00) -> kk' (4 palabras) y theta' (4 palabras)
+--   ST_SEND_ENCRYPT_INPUT  m' (2 palabras) y theta' (4) a hqc_encrypt (a continuacion de ek)
+--   ST_RE_ENCRYPT        en paralelo: (a) k_rej: hash con realineador de bytes (ct = u||v||salt como bytes continuos)
+--                        (b) comparacion de (u', v') con el ct recibido, palabra a palabra y sin salida anticipada.
+--                        La comparacion espera a que k_rej termine de leer las RAM de ct (se comparten).
+--   ST_OUTPUT_SS         ss = match ? kk' : k_rej
 --
 -- cycles      : ciclos desde start hasta tener ss listo (incluye la ingesta)
 -- cycles_core : igual pero desde el fin de la ingesta
--- match       : '1' si el re-cifrado coincidio (valido desde S_KREJ)
--- err         : pegajoso, error del RS (decoder o encoder del re-cifrado); con ct corrupto puede ser '1' y
---               aun asi ss = k_rej es el resultado correcto
+-- match       : '1' si el re-cifrado coincidio
+-- err         : pegajoso: error de rs_decoder / rs_encoder (con un ct invalido es normal; ss = k_rej sigue siendo correcto)
 -- ============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -40,12 +43,12 @@ use work.keccak_sponge_pkg.all;
 
 entity hqc_decaps is
   generic(
-    RM_GEN_01         : boolean := false;  -- generator_matrix_01 de rm_encoder/rm_decoder (HQC: false); mismo valor en ambos
-    RS_OUT_REVERSED   : boolean := true;   -- rs_encoder del re-cifrado (ver hqc_encaps)
-    RS_START_OVERLAP  : boolean := true;   -- rs_encoder: i_start_codeword coincide con el 1er simbolo
-    RSD_START_OVERLAP : boolean := true;   -- rs_decoder: idem
-    RSD_FCR           : natural := 1;      -- primera raiz consecutiva (HQC: alpha^1 .. alpha^30)
-    RSD_PRIM_POLY     : natural := 285     -- 0x11D
+    RM_GEN_01                      : boolean := false;  -- generator_matrix_01 de rm_encoder y rm_decoder (HQC: false); mismo valor en ambos
+    RS_ENC_OUT_REVERSED            : boolean := true;   -- rs_encoder (dentro de hqc_encrypt)
+    RS_ENC_START_OVERLAP           : boolean := true;
+    RS_DEC_START_OVERLAP           : boolean := true;   -- rs_decoder: i_start_codeword coincide con el 1er simbolo
+    RS_DEC_FIRST_CONSECUTIVE_ROOT  : natural := 1;      -- raices alpha^1 .. alpha^30
+    RS_DEC_PRIMITIVE_POLYNOMIAL    : natural := 285     -- 0x11D
   );
   port(
     clk   : in  std_logic;
@@ -81,60 +84,66 @@ architecture rtl of hqc_decaps is
   -- --------------------------------------------------------------------------
   -- Constantes
   -- --------------------------------------------------------------------------
-  constant DK_EK_WORDS  : integer := 281;
-  constant DK_WORDS     : integer := 291;
-  constant CT_V_BASE    : integer := 277;
-  constant CT_SALT_BASE : integer := 553;
-  constant CT_WORDS     : integer := 555;
-  constant U_LAST       : integer := 276;
+  constant DK_EK_WORD_COUNT        : integer := 281;
+  constant DK_WORD_COUNT           : integer := 291;
+  constant DK_INDEX_EK_LAST        : integer := 280;
+  constant DK_INDEX_SEED_DK_FIRST  : integer := 281;
+  constant DK_INDEX_SIGMA_FIRST    : integer := 285;
 
-  constant CMD_SEED_DK : std_logic_vector(63 downto 0) := make_cmd_stream(MODE_SHAKE256, 33);
-  constant CMD_KREJ    : std_logic_vector(63 downto 0) := make_cmd(MODE_SHA3_256, 4482, 0);
+  constant CT_WORD_COUNT           : integer := 555;
+  constant CT_INDEX_U_LAST         : integer := 276;
+  constant CT_INDEX_V_FIRST        : integer := 277;
+  constant CT_INDEX_SALT_FIRST     : integer := 553;
 
-  constant ZERO64    : std_logic_vector(63 downto 0) := (others => '0');
-  constant DOM01     : std_logic_vector(63 downto 0) := x"0000000000000001";
-  constant DOM03     : std_logic_vector(63 downto 0) := x"0000000000000003";
-  constant LAST_MASK : std_logic_vector(63 downto 0) := x"000000000000001F";   -- N mod 64 = 5 bits
-  constant NPOS_Y    : unsigned(6 downto 0) := to_unsigned(66, 7);
+  constant COMMAND_SHA3_256_EK       : std_logic_vector(63 downto 0) := make_cmd(MODE_SHA3_256, 2242, 0);
+  constant COMMAND_SHAKE_Y_STREAM    : std_logic_vector(63 downto 0) := make_cmd_stream(MODE_SHAKE256, 33);
+  constant COMMAND_SHA3_512_G        : std_logic_vector(63 downto 0) := make_cmd(MODE_SHA3_512, 65, 0);
+  constant COMMAND_SHA3_256_K_REJECT : std_logic_vector(63 downto 0) := make_cmd(MODE_SHA3_256, 4482, 0);
+
+  constant ZERO_WORD               : std_logic_vector(63 downto 0) := (others => '0');
+  constant DOMAIN_BYTE_01_WORD     : std_logic_vector(63 downto 0) := x"0000000000000001";
+  constant DOMAIN_BYTE_03_WORD     : std_logic_vector(63 downto 0) := x"0000000000000003";
+  constant U_LAST_WORD_MASK        : std_logic_vector(63 downto 0) := x"000000000000001F";   -- N mod 64 = 5 bits
+  constant LOW_BYTE_MASK           : std_logic_vector(63 downto 0) := x"00000000000000FF";
+  constant EK_HASH_DOMAIN_BYTE_01_IN_LAST_WORD : std_logic_vector(63 downto 0) := x"0000000000000100";
+  constant Y_SPARSE_COUNT          : unsigned(6 downto 0) := to_unsigned(66, 7);
 
   -- --------------------------------------------------------------------------
   -- Tipos
   -- --------------------------------------------------------------------------
-  type state_t is (S_IDLE, S_INGEST, S_Y, S_MULW, S_MUL, S_DEC, S_INJ, S_REENC, S_KREJ, S_OUT, S_DONE);
-  type fs_t    is (FS_IDLE, FS_CMD, FS_SEND);
-  type kf_t    is (KF_IDLE, KF_CMD, KF_ADDR, KF_WAIT, KF_PUSH, KF_SEND, KF_FLUSH);
-  type dm_t    is (DM_IDLE, DM_FETCH, DM_PUSH, DM_END);
-  type rf_t    is (RF_IDLE, RF_WAIT, RF_PRE, RF_FEED, RF_CAPT);
+  type main_state_t is (ST_IDLE, ST_INGEST, ST_SAMPLE_Y, ST_START_POLY_MUL, ST_WAIT_POLY_MUL, ST_DECODE_M_PRIME,
+                        ST_HASH_G, ST_SEND_ENCRYPT_INPUT, ST_RE_ENCRYPT, ST_OUTPUT_SS, ST_DONE);
+  type reg_feed_state_t  is (REGFEED_IDLE, REGFEED_COMMAND, REGFEED_WORDS);
+  type reg_feed_source_t is (SOURCE_SEED_DK, SOURCE_G_MESSAGE);
+  type k_reject_feed_state_t is (KREJ_IDLE, KREJ_COMMAND, KREJ_SET_ADDRESS, KREJ_WAIT_RAM, KREJ_PUSH_CHUNK,
+                                 KREJ_SEND_WORD, KREJ_FLUSH);
+  type rm_block_state_t  is (RMB_IDLE, RMB_FETCH, RMB_PUSH, RMB_END);
+  type rs_decode_state_t is (RSD_IDLE, RSD_WAIT_SYMBOLS, RSD_PRE_START, RSD_FEED, RSD_CAPTURE);
 
   type words4_t  is array (0 to 3)  of std_logic_vector(63 downto 0);
   type words2_t  is array (0 to 1)  of std_logic_vector(63 downto 0);
   type bytes46_t is array (0 to 45) of std_logic_vector(7 downto 0);
   type bytes16_t is array (0 to 15) of std_logic_vector(7 downto 0);
 
-  -- palabra w (0 o 1) de m': bytes 8w .. 8w+7, el byte 8w en los bits [7:0]
-  function pack_word(b : bytes16_t; w : integer) return std_logic_vector is
-    variable r : std_logic_vector(63 downto 0);
+  -- palabra 0 o 1 de m': bytes 8w .. 8w+7, el byte 8w en los bits [7:0]
+  function pack_m_prime_word(bytes_in : bytes16_t; word_index : integer) return std_logic_vector is
+    variable packed : std_logic_vector(63 downto 0);
   begin
-    for j in 0 to 7 loop
-      r(8*j + 7 downto 8*j) := b(8*w + j);
+    for lane in 0 to 7 loop
+      packed(8*lane + 7 downto 8*lane) := bytes_in(8*word_index + lane);
     end loop;
-    return r;
+    return packed;
   end function;
 
-  function tmp_h_word(t : std_logic_vector(255 downto 0); i : integer) return std_logic_vector is
+  function word_of_tmp_h(tmp_h_in : words4_t; word_index : integer) return std_logic_vector is
   begin
-    case i is
-      when 0      => return t(63 downto 0);
-      when 1      => return t(127 downto 64);
-      when 2      => return t(191 downto 128);
-      when others => return t(255 downto 192);
-    end case;
+    return tmp_h_in(word_index mod 4);
   end function;
 
-  -- trozos del mensaje de k_rej: 0 tmp_h(4) 1 sigma(2) 2 u(277: 276 de 8 B + 1 de 1 B) 3 v(276) 4 salt(2) 5 dom 03 (1)
-  function seg_len(s : integer) return integer is
+  -- trozos del mensaje de k_rej: 0 tmp_h(4)  1 sigma(2)  2 u(277: 276 de 8 B y 1 de 1 B)  3 v(276)  4 salt(2)  5 byte 03 (1)
+  function k_reject_segment_length(segment_index : integer) return integer is
   begin
-    case s is
+    case segment_index is
       when 0      => return 4;
       when 1      => return 2;
       when 2      => return 277;
@@ -145,312 +154,371 @@ architecture rtl of hqc_decaps is
   end function;
 
   -- --------------------------------------------------------------------------
-  -- Senales
+  -- Estado y valores pequenos con nombre propio
   -- --------------------------------------------------------------------------
-  signal state : state_t := S_IDLE;
-  signal fs    : fs_t := FS_IDLE;
-  signal kf    : kf_t := KF_IDLE;
-  signal dm_s  : dm_t := DM_IDLE;
-  signal rf    : rf_t := RF_IDLE;
+  signal main_state               : main_state_t := ST_IDLE;
+  signal reg_feed_state           : reg_feed_state_t := REGFEED_IDLE;
+  signal reg_feed_source          : reg_feed_source_t := SOURCE_SEED_DK;
+  signal k_reject_feed_state      : k_reject_feed_state_t := KREJ_IDLE;
+  signal rm_block_state           : rm_block_state_t := RMB_IDLE;
+  signal rs_decode_state          : rs_decode_state_t := RSD_IDLE;
 
-  -- valores pequenos con nombre propio
-  signal seed_dk_r : words4_t := (others => (others => '0'));
-  signal sigma_r   : words2_t := (others => (others => '0'));
-  signal salt_r    : words2_t := (others => (others => '0'));
-  signal kkp_r     : words4_t := (others => (others => '0'));   -- kk' (ss' del re-cifrado)
-  signal krej_r    : words4_t := (others => (others => '0'));   -- k_rej
-  signal mp_r      : bytes16_t := (others => (others => '0'));  -- m' (byte j = m'[j])
-  signal rs_buf    : bytes46_t := (others => (others => '0'));  -- simbolos del RM en orden de llegada (cw[45]..cw[0])
-  signal u_last_raw: std_logic_vector(7 downto 0) := (others => '0');   -- byte 2208 de u tal cual llego
+  signal seed_dk_words            : words4_t := (others => (others => '0'));
+  signal sigma_words              : words2_t := (others => (others => '0'));
+  signal salt_words               : words2_t := (others => (others => '0'));
+  signal tmp_h_words              : words4_t := (others => (others => '0'));   -- SHA3-256(ek||01)
+  signal kk_prime_words           : words4_t := (others => (others => '0'));   -- kk' = secreto si el re-cifrado coincide
+  signal theta_prime_words        : words4_t := (others => (others => '0'));
+  signal k_reject_words           : words4_t := (others => (others => '0'));   -- k_rej = secreto si no coincide
+  signal m_prime_bytes            : bytes16_t := (others => (others => '0'));  -- m' (byte j = m'[j])
+  signal rs_decoder_input_bytes   : bytes46_t := (others => (others => '0'));  -- simbolos del RM en orden de llegada (cw[45]..cw[0])
+  signal u_last_byte_raw          : std_logic_vector(7 downto 0) := (others => '0');   -- byte 2208 de u tal cual llego
 
   -- contadores
-  signal dk_idx    : integer range 0 to DK_WORDS := 0;
-  signal ct_idx    : integer range 0 to CT_WORDS := 0;
-  signal inj_idx   : integer range 0 to 3 := 0;
-  signal cap_cnt   : integer range 0 to 4 := 0;
-  signal out_i     : integer range 0 to 3 := 0;
-  signal cmp_idx   : integer range 0 to 276 := 0;
-  signal cmp_rd_ok : std_logic := '0';
-  signal cmp_bad   : std_logic := '0';
+  signal dk_word_index            : integer range 0 to DK_WORD_COUNT := 0;
+  signal ct_word_index            : integer range 0 to CT_WORD_COUNT := 0;
+  signal inject_word_index        : integer range 0 to 5 := 0;
+  signal kem_sponge_capture_count : integer range 0 to 8 := 0;
+  signal ss_output_word_index     : integer range 0 to 3 := 0;
+  signal ek_hash_command_pending  : std_logic := '0';
+  signal encrypt_done_latched     : std_logic := '0';
 
   -- pulsos de un ciclo
-  signal enc_start, smp_start, f_go, kf_go, mul_start, abort_req, dec_go : std_logic := '0';
+  signal encrypt_start, y_sampler_start, reg_feed_go, k_reject_feed_go, poly_mul_start, kem_sponge_abort, decode_go : std_logic := '0';
 
   -- contadores de ciclos
-  signal running, core_running : std_logic := '0';
-  signal cyc, cyc_core, cycles_r, cycles_core_r : unsigned(31 downto 0) := (others => '0');
+  signal cycle_counter_running, core_cycle_counter_running : std_logic := '0';
+  signal cycle_counter, core_cycle_counter, cycles_at_ss_ready, core_cycles_at_ss_ready : unsigned(31 downto 0) := (others => '0');
 
-  signal rst_n : std_logic;
-  signal ready_i, dk_ready_i, ct_ready_i, out_valid_i : std_logic;
+  signal reset_n_for_rm_decoder : std_logic;
+  signal dk_ready_internal, ct_ready_internal : std_logic;
 
-  -- hqc_encaps (re-cifrado)
-  signal enc_ready, enc_done, enc_err : std_logic;
-  signal enc_key_valid, enc_key_ready : std_logic;
-  signal enc_key_data, inj_word : std_logic_vector(63 downto 0);
-  signal enc_out_valid, enc_out_ready, enc_out_last : std_logic;
-  signal enc_out_data : std_logic_vector(63 downto 0);
-  signal enc_out_part : std_logic_vector(1 downto 0);
-  signal enc_tmp_h : std_logic_vector(255 downto 0);
+  -- --------------------------------------------------------------------------
+  -- hqc_encrypt (re-cifrado)
+  -- --------------------------------------------------------------------------
+  signal encrypt_ready, encrypt_done, encrypt_error : std_logic;
+  signal encrypt_in_valid, encrypt_in_ready : std_logic;
+  signal encrypt_in_data, encrypt_inject_word : std_logic_vector(63 downto 0);
+  signal encrypt_out_valid, encrypt_out_ready_internal, encrypt_out_last, encrypt_out_part : std_logic;
+  signal encrypt_out_data : std_logic_vector(63 downto 0);
 
-  -- sponge propio (y, k_rej)
-  signal sp_in_valid, sp_in_ready, sp_out_valid, sp_out_ready : std_logic;
-  signal sp_in_data, sp_out_data : std_logic_vector(63 downto 0);
+  -- --------------------------------------------------------------------------
+  -- sponge propio de la capa KEM
+  -- --------------------------------------------------------------------------
+  signal kem_sponge_in_valid, kem_sponge_in_ready, kem_sponge_out_valid, kem_sponge_out_ready : std_logic;
+  signal kem_sponge_in_data, kem_sponge_out_data : std_logic_vector(63 downto 0);
 
-  -- alimentador de y: SHAKE256(seed_dk||01)
-  signal fs_valid : std_logic;
-  signal fs_data  : std_logic_vector(63 downto 0);
-  signal fidx     : integer range 0 to 4 := 0;
+  -- tee de ek hacia el sponge y hacia hqc_encrypt
+  signal ek_tee_active : std_logic;
+  signal ek_word_for_sponge_hash : std_logic_vector(63 downto 0);
+  signal ek_hash_sponge_in_valid : std_logic;
 
-  -- sampler rej + banco de posiciones de y
-  signal rej_shake_valid, rej_shake_ready, smp_wr_en, smp_done : std_logic;
-  signal smp_wr_addr, smp_rd_addr, rd_y : unsigned(6 downto 0);
-  signal smp_wr_data, smp_rd_data, bank_y_dout : unsigned(14 downto 0);
+  -- alimentador por registros (y: seed_dk||01 ; G: tmp_h||m'||salt||00)
+  signal reg_feed_in_valid : std_logic;
+  signal reg_feed_in_data  : std_logic_vector(63 downto 0);
+  signal reg_feed_word_index : integer range 0 to 8 := 0;
+  signal reg_feed_last_index : integer range 0 to 8 := 0;
+  signal reg_feed_command    : std_logic_vector(63 downto 0) := (others => '0');
 
-  -- memorias densas: ct_u, ct_v (entrada), res (y*u)
-  signal ctu_we, ctv_we : std_logic;
-  signal ctu_waddr, ctv_waddr, ctu_raddr, ctv_raddr : unsigned(8 downto 0);
-  signal ctu_wdata, ctv_wdata, ctu_rdata, ctv_rdata : std_logic_vector(63 downto 0);
-  signal res_we : std_logic;
-  signal res_addr, res_raddr : unsigned(8 downto 0);
-  signal res_a_data, res_rdata : std_logic_vector(63 downto 0);
+  -- --------------------------------------------------------------------------
+  -- sampler rej y banco de posiciones de y
+  -- --------------------------------------------------------------------------
+  signal y_sampler_shake_valid, y_sampler_shake_ready, y_sampler_write_enable, y_sampler_done : std_logic;
+  signal y_sampler_write_address, y_sampler_read_address, y_bank_read_address : unsigned(6 downto 0);
+  signal y_sampler_write_data, y_sampler_read_data, y_bank_read_data : unsigned(14 downto 0);
+
+  -- --------------------------------------------------------------------------
+  -- Memorias densas: ct_u, ct_v (entrada) y product (y*u)
+  -- --------------------------------------------------------------------------
+  signal ct_u_ram_write_enable, ct_v_ram_write_enable : std_logic;
+  signal ct_u_ram_write_address, ct_v_ram_write_address, ct_u_ram_read_address, ct_v_ram_read_address : unsigned(8 downto 0);
+  signal ct_u_ram_write_data, ct_v_ram_write_data, ct_u_ram_read_data, ct_v_ram_read_data : std_logic_vector(63 downto 0);
+  signal product_ram_write_enable : std_logic;
+  signal product_ram_write_address, product_ram_read_address : unsigned(8 downto 0);
+  signal product_ram_write_data, product_ram_read_data : std_logic_vector(63 downto 0);
 
   -- poly_mul2 (DUAL = false)
-  signal mul_ready, mul_done : std_logic;
-  signal mul_pos_addr : unsigned(6 downto 0);
-  signal dense_addr : unsigned(8 downto 0);
-  signal acc_addr1, acc_addr2 : unsigned(9 downto 0);
-  signal acc_we1, acc_we2 : std_logic;
-  signal acc_din1, accA_din2, accA_dout1, accA_dout2 : std_logic_vector(63 downto 0);
+  signal poly_mul_ready, poly_mul_done : std_logic;
+  signal poly_mul_position_address : unsigned(6 downto 0);
+  signal poly_mul_dense_address : unsigned(8 downto 0);
+  signal acc_address_port1, acc_address_port2 : unsigned(9 downto 0);
+  signal acc_write_enable_port1, acc_write_enable_port2 : std_logic;
+  signal acc_data_in_port1, acc_data_in_port2, acc_data_out_port1, acc_data_out_port2 : std_logic_vector(63 downto 0);
 
-  -- decodificacion: motor de bloques RM
-  signal dm_i      : integer range 0 to 45 := 0;
-  signal dm_t      : integer range 0 to 6 := 0;
-  signal dm_addr   : unsigned(8 downto 0);
-  signal dm_word   : std_logic_vector(63 downto 0);
-  signal dm_blk    : std_logic_vector(383 downto 0) := (others => '0');
-  signal rm_in_valid, rm_in_ready, rm_out_valid : std_logic;
-  signal rm_out_data : std_logic_vector(7 downto 0);
-  signal rm_n      : integer range 0 to 46 := 0;
-  signal rm_all    : std_logic := '0';
+  -- --------------------------------------------------------------------------
+  -- Decodificacion: bloques RM
+  -- --------------------------------------------------------------------------
+  signal rm_block_index      : integer range 0 to 45 := 0;
+  signal rm_fetch_step       : integer range 0 to 6 := 0;
+  signal rm_block_ram_address : unsigned(8 downto 0);
+  signal rm_block_word       : std_logic_vector(63 downto 0);
+  signal rm_block_bits       : std_logic_vector(383 downto 0) := (others => '0');
+  signal rm_decoder_in_valid, rm_decoder_in_ready, rm_decoder_out_valid : std_logic;
+  signal rm_decoder_out_data : std_logic_vector(7 downto 0);
+  signal rm_symbol_arrival_count : integer range 0 to 46 := 0;
+  signal rm_all_symbols_received : std_logic := '0';
 
-  -- decodificacion: RS
-  signal rf_k      : integer range 0 to 45 := 0;
-  signal rsd_k     : integer range 0 to 16 := 0;
-  signal dec_fin, err_dec : std_logic := '0';
-  signal rsd_i_valid, rsd_i_end, rsd_i_start, rsd_i_consume : std_logic;
-  signal rsd_i_symbol, rsd_o_symbol : std_logic_vector(7 downto 0);
-  signal rsd_o_in_ready, rsd_o_end, rsd_o_start, rsd_o_valid, rsd_o_error : std_logic;
+  -- Decodificacion: RS
+  signal rs_decoder_feed_index   : integer range 0 to 45 := 0;
+  signal rs_decoder_output_count : integer range 0 to 16 := 0;
+  signal decode_finished, rs_decoder_error_sticky : std_logic := '0';
+  signal rs_dec_in_valid, rs_dec_end_codeword, rs_dec_start_codeword, rs_dec_consume : std_logic;
+  signal rs_dec_in_symbol, rs_dec_out_symbol : std_logic_vector(7 downto 0);
+  signal rs_dec_out_in_ready, rs_dec_out_end, rs_dec_out_start, rs_dec_out_valid, rs_dec_out_error : std_logic;
 
+  -- --------------------------------------------------------------------------
+  -- Comparacion de (u', v') con el ct
+  -- --------------------------------------------------------------------------
+  signal compare_word_index : integer range 0 to 276 := 0;
+  signal compare_read_ok    : std_logic := '0';
+  signal compare_mismatch   : std_logic := '0';
+
+  -- --------------------------------------------------------------------------
   -- k_rej: alimentador con realineador de bytes
-  signal kseg    : integer range 0 to 5 := 0;
-  signal koff    : integer range 0 to 276 := 0;
-  signal k_acc   : std_logic_vector(119 downto 0) := (others => '0');
-  signal k_cnt   : integer range 0 to 15 := 0;
-  signal k_chunk : std_logic_vector(63 downto 0);
-  signal k_chunk_n : integer range 1 to 8;
-  signal kf_valid : std_logic;
+  -- --------------------------------------------------------------------------
+  signal k_reject_segment_index : integer range 0 to 5 := 0;
+  signal k_reject_word_offset   : integer range 0 to 276 := 0;
+  signal k_reject_accumulator   : std_logic_vector(119 downto 0) := (others => '0');
+  signal k_reject_byte_count    : integer range 0 to 15 := 0;
+  signal k_reject_chunk_word    : std_logic_vector(63 downto 0);
+  signal k_reject_chunk_bytes   : integer range 1 to 8;
+  signal k_reject_in_valid      : std_logic;
+  signal k_reject_feed_busy     : std_logic;
 
 begin
 
   ---------------------------------------------------------------------------
   -- Instancias
   ---------------------------------------------------------------------------
-  rst_n <= not rst;
+  reset_n_for_rm_decoder <= not rst;
 
-  u_enc : entity work.hqc_encaps
-    generic map (RS_OUT_REVERSED => RS_OUT_REVERSED, RS_START_OVERLAP => RS_START_OVERLAP, RM_GEN_01 => RM_GEN_01)
-    port map (clk => clk, rst => rst, start => enc_start, ready => enc_ready, done => enc_done,
-              key_valid => enc_key_valid, key_ready => enc_key_ready, key_data => enc_key_data,
-              out_valid => enc_out_valid, out_ready => enc_out_ready, out_data => enc_out_data,
-              out_last => enc_out_last, out_part => enc_out_part,
-              cycles => open, cycles_core => open, err => enc_err, dbg_state => open,
-              tmp_h => enc_tmp_h);
+  u_encrypt : entity work.hqc_encrypt
+    generic map (SAMPLE_WEIGHT_R_E => 75, RS_OUT_REVERSED => RS_ENC_OUT_REVERSED,
+                 RS_START_OVERLAP => RS_ENC_START_OVERLAP, RM_GEN_01 => RM_GEN_01)
+    port map (clk => clk, rst => rst, start => encrypt_start, ready => encrypt_ready, done => encrypt_done,
+              in_valid => encrypt_in_valid, in_ready => encrypt_in_ready, in_data => encrypt_in_data,
+              out_valid => encrypt_out_valid, out_ready => encrypt_out_ready_internal, out_data => encrypt_out_data,
+              out_last => encrypt_out_last, out_part => encrypt_out_part,
+              cycles => open, cycles_core => open, err => encrypt_error, dbg_state => open);
 
-  u_sponge : entity work.keccak_sponge
+  u_kem_sponge : entity work.keccak_sponge
     generic map (BIG_ENDIAN_WORDS => false)
-    port map (clk => clk, rst => rst, abort => abort_req,
-              in_valid => sp_in_valid, in_ready => sp_in_ready, in_data => sp_in_data,
-              out_valid => sp_out_valid, out_ready => sp_out_ready, out_data => sp_out_data,
+    port map (clk => clk, rst => rst, abort => kem_sponge_abort,
+              in_valid => kem_sponge_in_valid, in_ready => kem_sponge_in_ready, in_data => kem_sponge_in_data,
+              out_valid => kem_sponge_out_valid, out_ready => kem_sponge_out_ready, out_data => kem_sponge_out_data,
               out_last => open);
 
-  u_rej : entity work.samplefxwtrej
+  u_y_sampler : entity work.samplefxwtrej
     generic map (N => 17669, N_32 => 243079, WT => 66, SHAKE_BYTE_SWAP => false)
-    port map (clk => clk, rst => rst, start => smp_start,
-              shake_din => sp_out_data, shake_valid => rej_shake_valid, shake_ready => rej_shake_ready,
-              wr_en => smp_wr_en, wr_addr => smp_wr_addr, wr_data => smp_wr_data,
-              rd_addr => smp_rd_addr, rd_data => smp_rd_data,
-              sample_done => smp_done);
+    port map (clk => clk, rst => rst, start => y_sampler_start,
+              shake_din => kem_sponge_out_data, shake_valid => y_sampler_shake_valid, shake_ready => y_sampler_shake_ready,
+              wr_en => y_sampler_write_enable, wr_addr => y_sampler_write_address, wr_data => y_sampler_write_data,
+              rd_addr => y_sampler_read_address, rd_data => y_sampler_read_data,
+              sample_done => y_sampler_done);
 
-  u_bank_y : entity work.position_mem
+  u_y_position_bank : entity work.position_mem
     generic map (DATA_WIDTH => 15, ADDR_WIDTH => 7)
-    port map (clk => clk, we => smp_wr_en, wr_addr => smp_wr_addr, din => smp_wr_data,
-              rd_addr => rd_y, dout => bank_y_dout);
+    port map (clk => clk, we => y_sampler_write_enable, wr_addr => y_sampler_write_address, din => y_sampler_write_data,
+              rd_addr => y_bank_read_address, dout => y_bank_read_data);
 
-  u_mul : entity work.poly_mul2
+  u_poly_mul : entity work.poly_mul2
     generic map (N => 17669, DUAL => false, POS_W => 15, PA_W => 7, AW => 9, ACC_AW => 10)
-    port map (clk => clk, rst => rst, start => mul_start, n_pos => NPOS_Y,
-              ready => mul_ready, done => mul_done,
-              pos_addr => mul_pos_addr, pos_data => bank_y_dout,
-              dense_addr => dense_addr, dense_a_data => ctu_rdata, dense_b_data => ZERO64,
-              acc_addr1 => acc_addr1, acc_we1 => acc_we1, acc_din1 => acc_din1,
-              acc_addr2 => acc_addr2, acc_we2 => acc_we2,
-              accA_din2 => accA_din2, accB_din2 => open,
-              accA_dout1 => accA_dout1, accB_dout1 => ZERO64,
-              accA_dout2 => accA_dout2, accB_dout2 => ZERO64,
-              res_we => res_we, res_addr => res_addr, res_a_data => res_a_data, res_b_data => open);
+    port map (clk => clk, rst => rst, start => poly_mul_start, n_pos => Y_SPARSE_COUNT,
+              ready => poly_mul_ready, done => poly_mul_done,
+              pos_addr => poly_mul_position_address, pos_data => y_bank_read_data,
+              dense_addr => poly_mul_dense_address, dense_a_data => ct_u_ram_read_data, dense_b_data => ZERO_WORD,
+              acc_addr1 => acc_address_port1, acc_we1 => acc_write_enable_port1, acc_din1 => acc_data_in_port1,
+              acc_addr2 => acc_address_port2, acc_we2 => acc_write_enable_port2,
+              accA_din2 => acc_data_in_port2, accB_din2 => open,
+              accA_dout1 => acc_data_out_port1, accB_dout1 => ZERO_WORD,
+              accA_dout2 => acc_data_out_port2, accB_dout2 => ZERO_WORD,
+              res_we => product_ram_write_enable, res_addr => product_ram_write_address,
+              res_a_data => product_ram_write_data, res_b_data => open);
 
-  u_acc : entity work.ram64_tdp
+  u_poly_mul_acc : entity work.ram64_tdp
     generic map (DEPTH => 554, ADDR_W => 10)
     port map (clk => clk,
-              we_1 => acc_we1, addr_1 => acc_addr1, din_1 => acc_din1, dout_1 => accA_dout1,
-              we_2 => acc_we2, addr_2 => acc_addr2, din_2 => accA_din2, dout_2 => accA_dout2);
+              we_1 => acc_write_enable_port1, addr_1 => acc_address_port1, din_1 => acc_data_in_port1, dout_1 => acc_data_out_port1,
+              we_2 => acc_write_enable_port2, addr_2 => acc_address_port2, din_2 => acc_data_in_port2, dout_2 => acc_data_out_port2);
 
-  u_ctu_mem : entity work.ram64_sdp
+  u_ct_u_ram : entity work.ram64_sdp
     generic map (DEPTH => 277, ADDR_W => 9)
-    port map (clk => clk, we => ctu_we, waddr => ctu_waddr, wdata => ctu_wdata,
-              raddr => ctu_raddr, rdata => ctu_rdata);
-  u_ctv_mem : entity work.ram64_sdp
+    port map (clk => clk, we => ct_u_ram_write_enable, waddr => ct_u_ram_write_address, wdata => ct_u_ram_write_data,
+              raddr => ct_u_ram_read_address, rdata => ct_u_ram_read_data);
+  u_ct_v_ram : entity work.ram64_sdp
     generic map (DEPTH => 277, ADDR_W => 9)
-    port map (clk => clk, we => ctv_we, waddr => ctv_waddr, wdata => ctv_wdata,
-              raddr => ctv_raddr, rdata => ctv_rdata);
-  u_res_mem : entity work.ram64_sdp
+    port map (clk => clk, we => ct_v_ram_write_enable, waddr => ct_v_ram_write_address, wdata => ct_v_ram_write_data,
+              raddr => ct_v_ram_read_address, rdata => ct_v_ram_read_data);
+  u_product_ram : entity work.ram64_sdp
     generic map (DEPTH => 277, ADDR_W => 9)
-    port map (clk => clk, we => res_we, waddr => res_addr, wdata => res_a_data,
-              raddr => res_raddr, rdata => res_rdata);
+    port map (clk => clk, we => product_ram_write_enable, waddr => product_ram_write_address, wdata => product_ram_write_data,
+              raddr => product_ram_read_address, rdata => product_ram_read_data);
 
-  u_rmdec : entity work.rm_decoder
+  u_rm_decoder : entity work.rm_decoder
     generic map (m => 7, rep => 3, generator_matrix_01 => RM_GEN_01)
-    port map (clock => clk, reset_n => rst_n,
-              in_valid => rm_in_valid, in_ready => rm_in_ready, data_in => dm_blk,
-              out_valid => rm_out_valid, out_ready => '1', data_out => rm_out_data);
+    port map (clock => clk, reset_n => reset_n_for_rm_decoder,
+              in_valid => rm_decoder_in_valid, in_ready => rm_decoder_in_ready, data_in => rm_block_bits,
+              out_valid => rm_decoder_out_valid, out_ready => '1', data_out => rm_decoder_out_data);
 
-  u_rsd : entity work.rs_decoder
-    generic map (N => 46, K => 16, OUTPUT_PARITY_SYMBOLS => false, FCR => RSD_FCR, PRIMITIVE_POLYNOMIAL => RSD_PRIM_POLY)
+  u_rs_decoder : entity work.rs_decoder
     port map (clk => clk, rst => rst,
-              i_end_codeword => rsd_i_end, i_start_codeword => rsd_i_start,
-              i_valid => rsd_i_valid, i_consume => rsd_i_consume, i_symbol => rsd_i_symbol,
-              o_in_ready => rsd_o_in_ready, o_end_codeword => rsd_o_end, o_start_codeword => rsd_o_start,
-              o_valid => rsd_o_valid, o_error => rsd_o_error, o_symbol => rsd_o_symbol);
+              i_end_codeword => rs_dec_end_codeword, i_start_codeword => rs_dec_start_codeword,
+              i_valid => rs_dec_in_valid, i_consume => rs_dec_consume, i_symbol => rs_dec_in_symbol,
+              o_in_ready => rs_dec_out_in_ready, o_end_codeword => rs_dec_out_end, o_start_codeword => rs_dec_out_start,
+              o_valid => rs_dec_out_valid, o_error => rs_dec_out_error, o_symbol => rs_dec_out_symbol);
 
   ---------------------------------------------------------------------------
   -- Salidas simples
   ---------------------------------------------------------------------------
-  ready_i      <= '1' when (state = S_IDLE and enc_ready = '1') else '0';
-  ready        <= ready_i;
-  done         <= '1' when state = S_DONE else '0';
-  match        <= not cmp_bad;
-  err          <= err_dec or enc_err;
-  cycles       <= cycles_r;
-  cycles_core  <= cycles_core_r;
-  dbg_state    <= std_logic_vector(to_unsigned(state_t'pos(state), 4));
+  ready       <= '1' when (main_state = ST_IDLE and encrypt_ready = '1') else '0';
+  done        <= '1' when main_state = ST_DONE else '0';
+  match       <= not compare_mismatch;
+  err         <= rs_decoder_error_sticky or encrypt_error;
+  cycles      <= cycles_at_ss_ready;
+  cycles_core <= core_cycles_at_ss_ready;
+  dbg_state   <= std_logic_vector(to_unsigned(main_state_t'pos(main_state), 4));
 
   ---------------------------------------------------------------------------
-  -- Ingesta
-  --   dk: palabras 0..280 (ek) -> puerto key_* de hqc_encaps ; 281..290 -> registros / se ignoran
-  --   ct: 0..276 u (RAM, la ultima enmascarada a 5 bits para poly_mul2) ; 277..552 v ; 553..554 salt
+  -- Ingesta de dk y ct
+  --   dk 0..280  : se reparten a la vez (tee) al sponge (hash de ek) y a hqc_encrypt
+  --   dk 281..290: seed_dk, sigma a registros; seed_kem se ignora
+  --   ct 0..276  : u a su RAM (la ultima palabra enmascarada a 5 bits para poly_mul2; el byte crudo va a u_last_byte_raw)
+  --   ct 277..552: v a su RAM ;  ct 553..554: salt a registros
   ---------------------------------------------------------------------------
-  dk_ready_i <= enc_key_ready when (state = S_INGEST and dk_idx < DK_EK_WORDS) else
-                '1'           when (state = S_INGEST and dk_idx < DK_WORDS)    else '0';
-  dk_ready   <= dk_ready_i;
-  ct_ready_i <= '1' when (state = S_INGEST and ct_idx < CT_WORDS) else '0';
-  ct_ready   <= ct_ready_i;
+  ek_tee_active <= '1' when (main_state = ST_INGEST and dk_word_index < DK_EK_WORD_COUNT and
+                             ek_hash_command_pending = '0') else '0';
 
-  ctu_we    <= '1' when (state = S_INGEST and ct_valid = '1' and ct_idx < CT_V_BASE) else '0';
-  ctu_waddr <= to_unsigned(ct_idx, 9) when ct_idx < CT_V_BASE else (others => '0');
-  ctu_wdata <= (ct_data and LAST_MASK) when ct_idx = U_LAST else ct_data;
+  -- la ultima palabra de ek para el hash: byte 2240 + byte de dominio 01 (mensaje de 2242 B)
+  ek_word_for_sponge_hash <= (dk_data and LOW_BYTE_MASK) or EK_HASH_DOMAIN_BYTE_01_IN_LAST_WORD
+                               when dk_word_index = DK_INDEX_EK_LAST else dk_data;
 
-  ctv_we    <= '1' when (state = S_INGEST and ct_valid = '1' and ct_idx >= CT_V_BASE and ct_idx < CT_SALT_BASE) else '0';
-  ctv_waddr <= to_unsigned(ct_idx - CT_V_BASE, 9) when (ct_idx >= CT_V_BASE and ct_idx < CT_SALT_BASE) else (others => '0');
-  ctv_wdata <= ct_data;
+  ek_hash_sponge_in_valid <= '1' when (main_state = ST_INGEST and ek_hash_command_pending = '1') else
+                             '1' when (ek_tee_active = '1' and dk_valid = '1' and encrypt_in_ready = '1') else '0';
 
-  -- puerto key_* de hqc_encaps: ek reenviado (S_INGEST), luego m' y salt (S_INJ)
-  enc_key_valid <= dk_valid when (state = S_INGEST and dk_idx < DK_EK_WORDS) else
-                   '1'      when state = S_INJ else '0';
-  enc_key_data  <= dk_data when state = S_INGEST else inj_word;
+  dk_ready_internal <= (kem_sponge_in_ready and encrypt_in_ready) when ek_tee_active = '1' else
+                       '1' when (main_state = ST_INGEST and dk_word_index >= DK_EK_WORD_COUNT and dk_word_index < DK_WORD_COUNT) else
+                       '0';
+  dk_ready <= dk_ready_internal;
 
-  process(inj_idx, mp_r, salt_r)
+  ct_ready_internal <= '1' when (main_state = ST_INGEST and ct_word_index < CT_WORD_COUNT) else '0';
+  ct_ready <= ct_ready_internal;
+
+  ct_u_ram_write_enable  <= '1' when (main_state = ST_INGEST and ct_valid = '1' and ct_word_index <= CT_INDEX_U_LAST) else '0';
+  ct_u_ram_write_address <= to_unsigned(ct_word_index, 9) when ct_word_index <= CT_INDEX_U_LAST else (others => '0');
+  ct_u_ram_write_data    <= (ct_data and U_LAST_WORD_MASK) when ct_word_index = CT_INDEX_U_LAST else ct_data;
+
+  ct_v_ram_write_enable  <= '1' when (main_state = ST_INGEST and ct_valid = '1' and
+                                      ct_word_index >= CT_INDEX_V_FIRST and ct_word_index < CT_INDEX_SALT_FIRST) else '0';
+  ct_v_ram_write_address <= to_unsigned(ct_word_index - CT_INDEX_V_FIRST, 9)
+                              when (ct_word_index >= CT_INDEX_V_FIRST and ct_word_index < CT_INDEX_SALT_FIRST) else (others => '0');
+  ct_v_ram_write_data    <= ct_data;
+
+  -- puerto de entrada de hqc_encrypt: ek repartido (ST_INGEST), luego m' y theta' (ST_SEND_ENCRYPT_INPUT)
+  encrypt_in_valid <= '1' when (ek_tee_active = '1' and dk_valid = '1' and kem_sponge_in_ready = '1') else
+                      '1' when main_state = ST_SEND_ENCRYPT_INPUT else '0';
+  encrypt_in_data  <= dk_data when main_state = ST_INGEST else encrypt_inject_word;
+
+  encrypt_inject_word_proc : process(inject_word_index, m_prime_bytes, theta_prime_words)
   begin
-    case inj_idx is
-      when 0      => inj_word <= pack_word(mp_r, 0);
-      when 1      => inj_word <= pack_word(mp_r, 1);
-      when 2      => inj_word <= salt_r(0);
-      when others => inj_word <= salt_r(1);
+    case inject_word_index is
+      when 0      => encrypt_inject_word <= pack_m_prime_word(m_prime_bytes, 0);
+      when 1      => encrypt_inject_word <= pack_m_prime_word(m_prime_bytes, 1);
+      when 2      => encrypt_inject_word <= theta_prime_words(0);
+      when 3      => encrypt_inject_word <= theta_prime_words(1);
+      when 4      => encrypt_inject_word <= theta_prime_words(2);
+      when others => encrypt_inject_word <= theta_prime_words(3);
     end case;
   end process;
 
   ---------------------------------------------------------------------------
-  -- Ruteo
+  -- Ruteo del sponge de la capa KEM segun el estado
   ---------------------------------------------------------------------------
-  -- banco de posiciones de y: sampler (escritura y limpieza) o poly_mul2
-  rd_y        <= smp_rd_addr when state = S_Y else mul_pos_addr;
-  smp_rd_data <= bank_y_dout;
+  kem_sponge_in_valid <= ek_hash_sponge_in_valid   when main_state = ST_INGEST else
+                         reg_feed_in_valid          when (main_state = ST_SAMPLE_Y or main_state = ST_HASH_G) else
+                         k_reject_in_valid          when main_state = ST_RE_ENCRYPT else '0';
 
-  -- sponge propio: S_Y (y) y S_KREJ (hash de k_rej)
-  rej_shake_valid <= sp_out_valid when state = S_Y else '0';
-  sp_out_ready    <= rej_shake_ready when state = S_Y else
-                     '1'             when state = S_KREJ else '0';
-  sp_in_valid <= fs_valid when state = S_Y else
-                 kf_valid when state = S_KREJ else '0';
-  sp_in_data  <= fs_data  when state = S_Y else
-                 CMD_KREJ when (state = S_KREJ and kf = KF_CMD) else
-                 k_acc(63 downto 0);
+  kem_sponge_in_data  <= COMMAND_SHA3_256_EK          when (main_state = ST_INGEST and ek_hash_command_pending = '1') else
+                         ek_word_for_sponge_hash      when main_state = ST_INGEST else
+                         reg_feed_in_data             when (main_state = ST_SAMPLE_Y or main_state = ST_HASH_G) else
+                         COMMAND_SHA3_256_K_REJECT    when (main_state = ST_RE_ENCRYPT and k_reject_feed_state = KREJ_COMMAND) else
+                         k_reject_accumulator(63 downto 0);
 
-  -- direcciones de las RAM de ct y res
-  ctu_raddr <= dense_addr                 when state = S_MUL   else
-               to_unsigned(cmp_idx, 9)    when state = S_REENC else
-               to_unsigned(koff, 9);
-  ctv_raddr <= dm_addr                    when state = S_DEC   else
-               to_unsigned(cmp_idx, 9)    when state = S_REENC else
-               to_unsigned(koff, 9);
-  res_raddr <= dm_addr;
+  y_sampler_shake_valid <= kem_sponge_out_valid when main_state = ST_SAMPLE_Y else '0';
+  kem_sponge_out_ready  <= y_sampler_shake_ready when main_state = ST_SAMPLE_Y else
+                           '1' when (main_state = ST_INGEST or main_state = ST_HASH_G or main_state = ST_RE_ENCRYPT) else '0';
 
-  -- comparacion con la salida del re-cifrado: se acepta una palabra cuando la RAM ya presento su dato
-  enc_out_ready <= '1' when (state = S_REENC and enc_out_valid = '1' and cmp_rd_ok = '1') else '0';
+  -- banco de posiciones de y: sampler (escritura y limpieza del bitmap) y despues poly_mul2
+  y_bank_read_address   <= y_sampler_read_address when main_state = ST_SAMPLE_Y else poly_mul_position_address;
+  y_sampler_read_data   <= y_bank_read_data;
 
-  -- salida ss
-  out_valid_i <= '1' when state = S_OUT else '0';
-  out_valid   <= out_valid_i;
-  out_last    <= '1' when (state = S_OUT and out_i = 3) else '0';
-  out_data    <= kkp_r(out_i) when cmp_bad = '0' else krej_r(out_i);
+  -- direcciones de lectura de las RAM de ct y de product
+  ct_u_ram_read_address <= poly_mul_dense_address                 when main_state = ST_WAIT_POLY_MUL else
+                           to_unsigned(k_reject_word_offset, 9)   when k_reject_feed_busy = '1'      else
+                           to_unsigned(compare_word_index, 9);
+  ct_v_ram_read_address <= rm_block_ram_address                   when main_state = ST_DECODE_M_PRIME else
+                           to_unsigned(k_reject_word_offset, 9)   when k_reject_feed_busy = '1'      else
+                           to_unsigned(compare_word_index, 9);
+  product_ram_read_address <= rm_block_ram_address;
 
   ---------------------------------------------------------------------------
-  -- Alimentador de y: SHAKE256(seed_dk || 01), sin limite
+  -- Salida ss = match ? kk' : k_rej
   ---------------------------------------------------------------------------
-  fs_valid <= '1' when (fs = FS_CMD or fs = FS_SEND) else '0';
-  process(fs, fidx, seed_dk_r)
+  out_valid <= '1' when main_state = ST_OUTPUT_SS else '0';
+  out_last  <= '1' when (main_state = ST_OUTPUT_SS and ss_output_word_index = 3) else '0';
+  out_data  <= kk_prime_words(ss_output_word_index) when compare_mismatch = '0' else k_reject_words(ss_output_word_index);
+
+  ---------------------------------------------------------------------------
+  -- Alimentador por registros: y (seed_dk || 01) y G (tmp_h || m' || salt || 00)
+  ---------------------------------------------------------------------------
+  reg_feed_in_valid <= '1' when (reg_feed_state = REGFEED_COMMAND or reg_feed_state = REGFEED_WORDS) else '0';
+
+  reg_feed_data_proc : process(reg_feed_state, reg_feed_command, reg_feed_source, reg_feed_word_index,
+                               seed_dk_words, tmp_h_words, m_prime_bytes, salt_words)
   begin
-    if fs = FS_CMD then
-      fs_data <= CMD_SEED_DK;
-    elsif fidx < 4 then
-      fs_data <= seed_dk_r(fidx);
+    if reg_feed_state = REGFEED_COMMAND then
+      reg_feed_in_data <= reg_feed_command;
+    elsif reg_feed_source = SOURCE_SEED_DK then
+      if reg_feed_word_index < 4 then
+        reg_feed_in_data <= seed_dk_words(reg_feed_word_index);
+      else
+        reg_feed_in_data <= DOMAIN_BYTE_01_WORD;
+      end if;
     else
-      fs_data <= DOM01;
+      if reg_feed_word_index < 4 then
+        reg_feed_in_data <= tmp_h_words(reg_feed_word_index);
+      elsif reg_feed_word_index < 6 then
+        reg_feed_in_data <= pack_m_prime_word(m_prime_bytes, reg_feed_word_index - 4);
+      elsif reg_feed_word_index < 8 then
+        reg_feed_in_data <= salt_words(reg_feed_word_index - 6);
+      else
+        reg_feed_in_data <= ZERO_WORD;                       -- byte de dominio 00
+      end if;
     end if;
   end process;
 
-  process(clk)
+  reg_feed_fsm : process(clk)
   begin
     if rising_edge(clk) then
       if rst = '1' then
-        fs   <= FS_IDLE;
-        fidx <= 0;
+        reg_feed_state      <= REGFEED_IDLE;
+        reg_feed_word_index <= 0;
       else
-        case fs is
-          when FS_IDLE =>
-            if f_go = '1' then
-              fidx <= 0;
-              fs   <= FS_CMD;
+        case reg_feed_state is
+          when REGFEED_IDLE =>
+            if reg_feed_go = '1' then
+              reg_feed_state <= REGFEED_COMMAND;
             end if;
-          when FS_CMD =>
-            if sp_in_ready = '1' then
-              fs <= FS_SEND;
+          when REGFEED_COMMAND =>
+            if kem_sponge_in_ready = '1' then
+              reg_feed_word_index <= 0;
+              reg_feed_state      <= REGFEED_WORDS;
             end if;
-          when FS_SEND =>
-            if sp_in_ready = '1' then
-              if fidx = 4 then
-                fs <= FS_IDLE;
+          when REGFEED_WORDS =>
+            if kem_sponge_in_ready = '1' then
+              if reg_feed_word_index = reg_feed_last_index then
+                reg_feed_state <= REGFEED_IDLE;
               else
-                fidx <= fidx + 1;
+                reg_feed_word_index <= reg_feed_word_index + 1;
               end if;
             end if;
         end case;
@@ -461,108 +529,114 @@ begin
   ---------------------------------------------------------------------------
   -- Alimentador de k_rej con realineador de bytes
   --   mensaje = tmp_h(32) || sigma(16) || u(2209) || v(2208) || salt(16) || 03   = 4482 B = 561 palabras
-  --   trozos de 8 B salvo el ultimo byte de u y el 03 (1 B). El acumulador k_acc guarda hasta 15 B
-  --   (k_cnt valido); por cada trozo se anade y, si hay >= 8 B, se envia una palabra al sponge.
+  --   Trozos de 8 B salvo el ultimo byte de u y el 03 (1 B). El acumulador guarda hasta 15 B
+  --   (k_reject_byte_count validos); por cada trozo se anade y, si hay >= 8 B, se envia una palabra al sponge.
   ---------------------------------------------------------------------------
-  kf_valid <= '1' when (kf = KF_CMD or (kf = KF_SEND and k_cnt >= 8) or (kf = KF_FLUSH and k_cnt > 0)) else '0';
+  k_reject_in_valid  <= '1' when (k_reject_feed_state = KREJ_COMMAND or
+                                  (k_reject_feed_state = KREJ_SEND_WORD and k_reject_byte_count >= 8) or
+                                  (k_reject_feed_state = KREJ_FLUSH and k_reject_byte_count > 0)) else '0';
+  -- la lectura de las RAM de ct es de k_rej desde que se lanza hasta que termina
+  k_reject_feed_busy <= '1' when (k_reject_feed_state /= KREJ_IDLE or k_reject_feed_go = '1') else '0';
 
-  process(kseg, koff, enc_tmp_h, sigma_r, salt_r, ctu_rdata, ctv_rdata, u_last_raw)
+  k_reject_chunk_proc : process(k_reject_segment_index, k_reject_word_offset, tmp_h_words, sigma_words, salt_words,
+                                ct_u_ram_read_data, ct_v_ram_read_data, u_last_byte_raw)
   begin
-    k_chunk   <= ZERO64;
-    k_chunk_n <= 8;
-    case kseg is
+    k_reject_chunk_word  <= ZERO_WORD;
+    k_reject_chunk_bytes <= 8;
+    case k_reject_segment_index is
       when 0 =>
-        k_chunk <= tmp_h_word(enc_tmp_h, koff);
+        k_reject_chunk_word <= word_of_tmp_h(tmp_h_words, k_reject_word_offset);
       when 1 =>
-        k_chunk <= sigma_r(koff mod 2);
+        k_reject_chunk_word <= sigma_words(k_reject_word_offset mod 2);
       when 2 =>
-        if koff < U_LAST then
-          k_chunk <= ctu_rdata;
+        if k_reject_word_offset < CT_INDEX_U_LAST then
+          k_reject_chunk_word <= ct_u_ram_read_data;
         else
-          k_chunk   <= std_logic_vector'(x"00000000000000" & u_last_raw);   -- ultimo byte de u: 1 B
-          k_chunk_n <= 1;
+          k_reject_chunk_word  <= std_logic_vector'(x"00000000000000" & u_last_byte_raw);   -- ultimo byte de u: 1 B
+          k_reject_chunk_bytes <= 1;
         end if;
       when 3 =>
-        k_chunk <= ctv_rdata;
+        k_reject_chunk_word <= ct_v_ram_read_data;
       when 4 =>
-        k_chunk <= salt_r(koff mod 2);
+        k_reject_chunk_word <= salt_words(k_reject_word_offset mod 2);
       when others =>
-        k_chunk   <= DOM03;                                -- byte de dominio 03: 1 B
-        k_chunk_n <= 1;
+        k_reject_chunk_word  <= DOMAIN_BYTE_03_WORD;                                      -- byte de dominio 03: 1 B
+        k_reject_chunk_bytes <= 1;
     end case;
   end process;
 
-  process(clk)
-    variable advance : boolean;
+  k_reject_feed_fsm : process(clk)
+    variable advance_to_next_chunk : boolean;
   begin
     if rising_edge(clk) then
       if rst = '1' then
-        kf    <= KF_IDLE;
-        kseg  <= 0;
-        koff  <= 0;
-        k_cnt <= 0;
-        k_acc <= (others => '0');
+        k_reject_feed_state   <= KREJ_IDLE;
+        k_reject_segment_index <= 0;
+        k_reject_word_offset  <= 0;
+        k_reject_byte_count   <= 0;
+        k_reject_accumulator  <= (others => '0');
       else
-        case kf is
+        case k_reject_feed_state is
 
-          when KF_IDLE =>
-            if kf_go = '1' then
-              kf <= KF_CMD;
+          when KREJ_IDLE =>
+            if k_reject_feed_go = '1' then
+              k_reject_feed_state <= KREJ_COMMAND;
             end if;
 
-          when KF_CMD =>                                   -- comando SHA3-256, 4482 B
-            if sp_in_ready = '1' then
-              kseg  <= 0;
-              koff  <= 0;
-              k_cnt <= 0;
-              k_acc <= (others => '0');
-              kf    <= KF_ADDR;
+          when KREJ_COMMAND =>                              -- comando SHA3-256, 4482 B
+            if kem_sponge_in_ready = '1' then
+              k_reject_segment_index <= 0;
+              k_reject_word_offset   <= 0;
+              k_reject_byte_count    <= 0;
+              k_reject_accumulator   <= (others => '0');
+              k_reject_feed_state    <= KREJ_SET_ADDRESS;
             end if;
 
-          when KF_ADDR =>                                  -- koff direcciona ct_u y ct_v
-            kf <= KF_WAIT;
+          when KREJ_SET_ADDRESS =>                          -- k_reject_word_offset direcciona ct_u y ct_v
+            k_reject_feed_state <= KREJ_WAIT_RAM;
 
-          when KF_WAIT =>                                  -- latencia de las RAM
-            kf <= KF_PUSH;
+          when KREJ_WAIT_RAM =>                             -- latencia de las RAM
+            k_reject_feed_state <= KREJ_PUSH_CHUNK;
 
-          when KF_PUSH =>                                  -- anadir el trozo al acumulador
-            k_acc <= k_acc or std_logic_vector(shift_left(resize(unsigned(k_chunk), 120), 8 * k_cnt));
-            k_cnt <= k_cnt + k_chunk_n;
-            kf    <= KF_SEND;
+          when KREJ_PUSH_CHUNK =>                           -- anadir el trozo al acumulador
+            k_reject_accumulator <= k_reject_accumulator or
+                                    std_logic_vector(shift_left(resize(unsigned(k_reject_chunk_word), 120), 8 * k_reject_byte_count));
+            k_reject_byte_count  <= k_reject_byte_count + k_reject_chunk_bytes;
+            k_reject_feed_state  <= KREJ_SEND_WORD;
 
-          when KF_SEND =>                                  -- con >= 8 B se envia una palabra
-            advance := false;
-            if k_cnt >= 8 then
-              if sp_in_ready = '1' then
-                k_acc   <= std_logic_vector(shift_right(unsigned(k_acc), 64));
-                k_cnt   <= k_cnt - 8;
-                advance := true;
+          when KREJ_SEND_WORD =>                            -- con >= 8 B se envia una palabra
+            advance_to_next_chunk := false;
+            if k_reject_byte_count >= 8 then
+              if kem_sponge_in_ready = '1' then
+                k_reject_accumulator  <= std_logic_vector(shift_right(unsigned(k_reject_accumulator), 64));
+                k_reject_byte_count   <= k_reject_byte_count - 8;
+                advance_to_next_chunk := true;
               end if;
             else
-              advance := true;
+              advance_to_next_chunk := true;
             end if;
-            if advance then
-              if kseg = 5 then
-                kf <= KF_FLUSH;
+            if advance_to_next_chunk then
+              if k_reject_segment_index = 5 then
+                k_reject_feed_state <= KREJ_FLUSH;
               else
-                if koff = seg_len(kseg) - 1 then
-                  kseg <= kseg + 1;
-                  koff <= 0;
+                if k_reject_word_offset = k_reject_segment_length(k_reject_segment_index) - 1 then
+                  k_reject_segment_index <= k_reject_segment_index + 1;
+                  k_reject_word_offset   <= 0;
                 else
-                  koff <= koff + 1;
+                  k_reject_word_offset <= k_reject_word_offset + 1;
                 end if;
-                kf <= KF_ADDR;
+                k_reject_feed_state <= KREJ_SET_ADDRESS;
               end if;
             end if;
 
-          when KF_FLUSH =>                                 -- resto (4482 mod 8 = 2 B): ultima palabra parcial
-            if k_cnt > 0 then
-              if sp_in_ready = '1' then
-                k_cnt <= 0;
-                kf    <= KF_IDLE;
+          when KREJ_FLUSH =>                                -- resto (4482 mod 8 = 2 B): ultima palabra parcial
+            if k_reject_byte_count > 0 then
+              if kem_sponge_in_ready = '1' then
+                k_reject_byte_count <= 0;
+                k_reject_feed_state <= KREJ_IDLE;
               end if;
             else
-              kf <= KF_IDLE;
+              k_reject_feed_state <= KREJ_IDLE;
             end if;
 
         end case;
@@ -575,146 +649,146 @@ begin
   -- data_in = w5 & w4 & w3 & w2 & w1 & w0 (w0 = bits bajos del bloque = copia 0 en los 128 bits bajos).
   -- Los simbolos salen en el mismo orden: cw[45] .. cw[0] (orden de entrada del rs_decoder).
   ---------------------------------------------------------------------------
-  dm_word     <= ctv_rdata xor res_rdata;
-  dm_addr     <= to_unsigned(6 * dm_i + dm_t, 9) when dm_t < 6 else (others => '0');
-  rm_in_valid <= '1' when dm_s = DM_PUSH else '0';
+  rm_block_word        <= ct_v_ram_read_data xor product_ram_read_data;
+  rm_block_ram_address <= to_unsigned(6 * rm_block_index + rm_fetch_step, 9) when rm_fetch_step < 6 else (others => '0');
+  rm_decoder_in_valid  <= '1' when rm_block_state = RMB_PUSH else '0';
 
-  process(clk)
+  rm_block_fsm : process(clk)
   begin
     if rising_edge(clk) then
       if rst = '1' then
-        dm_s   <= DM_IDLE;
-        rm_all <= '0';
-        rm_n   <= 0;
+        rm_block_state          <= RMB_IDLE;
+        rm_all_symbols_received <= '0';
+        rm_symbol_arrival_count <= 0;
       else
         -- los simbolos que salen del rm_decoder se guardan en orden de llegada
-        if rm_out_valid = '1' then
-          if rm_n <= 45 then
-            rs_buf(rm_n) <= rm_out_data;
+        if rm_decoder_out_valid = '1' then
+          if rm_symbol_arrival_count <= 45 then
+            rs_decoder_input_bytes(rm_symbol_arrival_count) <= rm_decoder_out_data;
           end if;
-          if rm_n = 45 then
-            rm_all <= '1';
+          if rm_symbol_arrival_count = 45 then
+            rm_all_symbols_received <= '1';
           end if;
-          if rm_n < 46 then
-            rm_n <= rm_n + 1;
+          if rm_symbol_arrival_count < 46 then
+            rm_symbol_arrival_count <= rm_symbol_arrival_count + 1;
           end if;
         end if;
 
-        case dm_s is
-          when DM_IDLE =>
-            if dec_go = '1' then
-              dm_i   <= 45;
-              dm_t   <= 0;
-              rm_n   <= 0;
-              rm_all <= '0';
-              dm_s   <= DM_FETCH;
+        case rm_block_state is
+          when RMB_IDLE =>
+            if decode_go = '1' then
+              rm_block_index          <= 45;
+              rm_fetch_step           <= 0;
+              rm_symbol_arrival_count <= 0;
+              rm_all_symbols_received <= '0';
+              rm_block_state          <= RMB_FETCH;
             end if;
 
-          when DM_FETCH =>                               -- ciclo t presenta la direccion t; el dato t llega en t+1
-            case dm_t is
-              when 1      => dm_blk(63 downto 0)     <= dm_word;
-              when 2      => dm_blk(127 downto 64)   <= dm_word;
-              when 3      => dm_blk(191 downto 128)  <= dm_word;
-              when 4      => dm_blk(255 downto 192)  <= dm_word;
-              when 5      => dm_blk(319 downto 256)  <= dm_word;
-              when 6      => dm_blk(383 downto 320)  <= dm_word;
+          when RMB_FETCH =>                                  -- el ciclo t presenta la direccion t; el dato t llega en t+1
+            case rm_fetch_step is
+              when 1      => rm_block_bits(63 downto 0)     <= rm_block_word;
+              when 2      => rm_block_bits(127 downto 64)   <= rm_block_word;
+              when 3      => rm_block_bits(191 downto 128)  <= rm_block_word;
+              when 4      => rm_block_bits(255 downto 192)  <= rm_block_word;
+              when 5      => rm_block_bits(319 downto 256)  <= rm_block_word;
+              when 6      => rm_block_bits(383 downto 320)  <= rm_block_word;
               when others => null;
             end case;
-            if dm_t = 6 then
-              dm_s <= DM_PUSH;
+            if rm_fetch_step = 6 then
+              rm_block_state <= RMB_PUSH;
             else
-              dm_t <= dm_t + 1;
+              rm_fetch_step <= rm_fetch_step + 1;
             end if;
 
-          when DM_PUSH =>                                -- rm_in_valid = '1' hasta que in_ready
-            if rm_in_ready = '1' then
-              if dm_i = 0 then
-                dm_s <= DM_END;
+          when RMB_PUSH =>                                   -- rm_decoder_in_valid = '1' hasta que in_ready
+            if rm_decoder_in_ready = '1' then
+              if rm_block_index = 0 then
+                rm_block_state <= RMB_END;
               else
-                dm_i <= dm_i - 1;
-                dm_t <= 0;
-                dm_s <= DM_FETCH;
+                rm_block_index <= rm_block_index - 1;
+                rm_fetch_step  <= 0;
+                rm_block_state <= RMB_FETCH;
               end if;
             end if;
 
-          when DM_END =>
-            dm_s <= DM_IDLE;
+          when RMB_END =>
+            rm_block_state <= RMB_IDLE;
         end case;
       end if;
     end if;
   end process;
 
   ---------------------------------------------------------------------------
-  -- Decodificacion RS: cuando estan los 46 simbolos se envian seguidos (cw[45] .. cw[0]);
+  -- Decodificacion RS: con los 46 simbolos ya recibidos se envian seguidos (cw[45] .. cw[0]);
   -- el decoder entrega primero los 16 simbolos de informacion b0..b15 = m[15] .. m[0].
   ---------------------------------------------------------------------------
-  rsd_i_consume <= '1';
-  rsd_i_valid   <= '1' when rf = RF_FEED else '0';
-  rsd_i_symbol  <= rs_buf(rf_k);
-  rsd_i_end     <= '1' when (rf = RF_FEED and rf_k = 45) else '0';
-  rsd_i_start   <= '1' when ((RSD_START_OVERLAP and rf = RF_FEED and rf_k = 0) or
-                             ((not RSD_START_OVERLAP) and rf = RF_PRE)) else '0';
+  rs_dec_consume        <= '1';
+  rs_dec_in_valid       <= '1' when rs_decode_state = RSD_FEED else '0';
+  rs_dec_in_symbol      <= rs_decoder_input_bytes(rs_decoder_feed_index);
+  rs_dec_end_codeword   <= '1' when (rs_decode_state = RSD_FEED and rs_decoder_feed_index = 45) else '0';
+  rs_dec_start_codeword <= '1' when ((RS_DEC_START_OVERLAP and rs_decode_state = RSD_FEED and rs_decoder_feed_index = 0) or
+                                     ((not RS_DEC_START_OVERLAP) and rs_decode_state = RSD_PRE_START)) else '0';
 
-  process(clk)
-    variable idx : integer range 0 to 16;
+  rs_decode_fsm : process(clk)
+    variable output_symbol_index : integer range 0 to 16;
   begin
     if rising_edge(clk) then
       if rst = '1' then
-        rf      <= RF_IDLE;
-        dec_fin <= '0';
-        err_dec <= '0';
-        rsd_k   <= 0;
-        rf_k    <= 0;
+        rs_decode_state         <= RSD_IDLE;
+        decode_finished         <= '0';
+        rs_decoder_error_sticky <= '0';
+        rs_decoder_output_count <= 0;
+        rs_decoder_feed_index   <= 0;
       else
-        if start = '1' and state = S_IDLE then
-          err_dec <= '0';
+        if start = '1' and main_state = ST_IDLE then
+          rs_decoder_error_sticky <= '0';
         end if;
-        if rsd_o_error = '1' then
-          err_dec <= '1';
+        if rs_dec_out_error = '1' then
+          rs_decoder_error_sticky <= '1';
         end if;
 
         -- captura de la salida: m'[15 - k] = k-esimo simbolo; termina con o_end_codeword
-        if rsd_o_valid = '1' and rf = RF_CAPT then
-          if rsd_o_start = '1' then
-            idx := 0;
+        if rs_dec_out_valid = '1' and rs_decode_state = RSD_CAPTURE then
+          if rs_dec_out_start = '1' then
+            output_symbol_index := 0;
           else
-            idx := rsd_k;
+            output_symbol_index := rs_decoder_output_count;
           end if;
-          if idx < 16 then
-            mp_r(15 - idx) <= rsd_o_symbol;
-            rsd_k          <= idx + 1;
+          if output_symbol_index < 16 then
+            m_prime_bytes(15 - output_symbol_index) <= rs_dec_out_symbol;
+            rs_decoder_output_count                 <= output_symbol_index + 1;
           end if;
-          if rsd_o_end = '1' then
-            dec_fin <= '1';
-            rf      <= RF_IDLE;
+          if rs_dec_out_end = '1' then
+            decode_finished <= '1';
+            rs_decode_state <= RSD_IDLE;
           end if;
         end if;
 
-        case rf is
-          when RF_IDLE =>
-            if dec_go = '1' then
-              dec_fin <= '0';
-              rsd_k   <= 0;
-              rf      <= RF_WAIT;
+        case rs_decode_state is
+          when RSD_IDLE =>
+            if decode_go = '1' then
+              decode_finished         <= '0';
+              rs_decoder_output_count <= 0;
+              rs_decode_state         <= RSD_WAIT_SYMBOLS;
             end if;
-          when RF_WAIT =>                                 -- esperar los 46 simbolos del RM
-            if rm_all = '1' then
-              rf_k <= 0;
-              if RSD_START_OVERLAP then
-                rf <= RF_FEED;
+          when RSD_WAIT_SYMBOLS =>                            -- esperar los 46 simbolos del RM
+            if rm_all_symbols_received = '1' then
+              rs_decoder_feed_index <= 0;
+              if RS_DEC_START_OVERLAP then
+                rs_decode_state <= RSD_FEED;
               else
-                rf <= RF_PRE;
+                rs_decode_state <= RSD_PRE_START;
               end if;
             end if;
-          when RF_PRE =>
-            rf <= RF_FEED;
-          when RF_FEED =>
-            if rf_k = 45 then
-              rf <= RF_CAPT;
+          when RSD_PRE_START =>
+            rs_decode_state <= RSD_FEED;
+          when RSD_FEED =>
+            if rs_decoder_feed_index = 45 then
+              rs_decode_state <= RSD_CAPTURE;
             else
-              rf_k <= rf_k + 1;
+              rs_decoder_feed_index <= rs_decoder_feed_index + 1;
             end if;
-          when RF_CAPT =>
+          when RSD_CAPTURE =>
             null;
         end case;
       end if;
@@ -722,190 +796,245 @@ begin
   end process;
 
   ---------------------------------------------------------------------------
-  -- FSM maestra (state)
+  -- Comparacion de (u', v') con el ct recibido (sin salida anticipada):
+  --   se acepta una palabra de hqc_encrypt solo cuando las RAM de ct ya presentaron su dato
+  --   y k_rej ya no las usa. u[276] compara solo el byte bajo (el resto de la palabra es relleno).
   ---------------------------------------------------------------------------
-  process(clk)
-    variable xfer : boolean;
+  encrypt_out_ready_internal <= '1' when (main_state = ST_RE_ENCRYPT and encrypt_out_valid = '1' and
+                                          compare_read_ok = '1' and k_reject_feed_busy = '0') else '0';
+
+  compare_fsm : process(clk)
+    variable transfer : boolean;
   begin
     if rising_edge(clk) then
       if rst = '1' then
-        state        <= S_IDLE;
-        dk_idx       <= 0;
-        ct_idx       <= 0;
-        inj_idx      <= 0;
-        cap_cnt      <= 0;
-        out_i        <= 0;
-        cmp_idx      <= 0;
-        cmp_rd_ok    <= '0';
-        cmp_bad      <= '0';
-        running      <= '0';
-        core_running <= '0';
-        enc_start    <= '0';
-        smp_start    <= '0';
-        f_go         <= '0';
-        kf_go        <= '0';
-        mul_start    <= '0';
-        abort_req    <= '0';
-        dec_go       <= '0';
+        compare_word_index <= 0;
+        compare_read_ok    <= '0';
+        compare_mismatch   <= '0';
+      else
+        if main_state = ST_IDLE and start = '1' then
+          compare_mismatch <= '0';
+        end if;
+        if main_state /= ST_RE_ENCRYPT then
+          compare_word_index <= 0;
+          compare_read_ok    <= '0';
+        else
+          transfer := (encrypt_out_valid = '1' and encrypt_out_ready_internal = '1');
+          if transfer then
+            compare_read_ok <= '0';
+            if encrypt_out_part = '0' then                     -- u'
+              if compare_word_index = CT_INDEX_U_LAST then
+                if encrypt_out_data(7 downto 0) /= u_last_byte_raw then
+                  compare_mismatch <= '1';
+                end if;
+              elsif encrypt_out_data /= ct_u_ram_read_data then
+                compare_mismatch <= '1';
+              end if;
+            else                                               -- v'
+              if encrypt_out_data /= ct_v_ram_read_data then
+                compare_mismatch <= '1';
+              end if;
+            end if;
+            if encrypt_out_last = '1' then
+              compare_word_index <= 0;
+            else
+              compare_word_index <= compare_word_index + 1;
+            end if;
+          else
+            compare_read_ok <= not k_reject_feed_busy;         -- la direccion de la RAM lleva >= 1 ciclo estable
+          end if;
+        end if;
+      end if;
+    end if;
+  end process;
+
+  ---------------------------------------------------------------------------
+  -- FSM principal
+  ---------------------------------------------------------------------------
+  main_fsm : process(clk)
+    variable dk_transfer : boolean;
+    variable ct_transfer : boolean;
+  begin
+    if rising_edge(clk) then
+      if rst = '1' then
+        main_state                 <= ST_IDLE;
+        dk_word_index              <= 0;
+        ct_word_index              <= 0;
+        inject_word_index          <= 0;
+        kem_sponge_capture_count   <= 0;
+        ss_output_word_index       <= 0;
+        ek_hash_command_pending    <= '0';
+        encrypt_done_latched       <= '0';
+        cycle_counter_running      <= '0';
+        core_cycle_counter_running <= '0';
+        encrypt_start              <= '0';
+        y_sampler_start            <= '0';
+        reg_feed_go                <= '0';
+        k_reject_feed_go           <= '0';
+        poly_mul_start             <= '0';
+        kem_sponge_abort           <= '0';
+        decode_go                  <= '0';
       else
         -- pulsos: valen '1' durante UN ciclo cuando se asignan
-        enc_start <= '0';
-        smp_start <= '0';
-        f_go      <= '0';
-        kf_go     <= '0';
-        mul_start <= '0';
-        abort_req <= '0';
-        dec_go    <= '0';
+        encrypt_start    <= '0';
+        y_sampler_start  <= '0';
+        reg_feed_go      <= '0';
+        k_reject_feed_go <= '0';
+        poly_mul_start   <= '0';
+        kem_sponge_abort <= '0';
+        decode_go        <= '0';
 
-        if running = '1' then
-          cyc <= cyc + 1;
+        if cycle_counter_running = '1' then
+          cycle_counter <= cycle_counter + 1;
         end if;
-        if core_running = '1' then
-          cyc_core <= cyc_core + 1;
+        if core_cycle_counter_running = '1' then
+          core_cycle_counter <= core_cycle_counter + 1;
+        end if;
+        if encrypt_done = '1' then
+          encrypt_done_latched <= '1';
         end if;
 
-        case state is
+        -- captura de la salida del sponge de la capa KEM
+        if kem_sponge_out_valid = '1' and kem_sponge_out_ready = '1' then
+          case main_state is
+            when ST_INGEST =>                                  -- tmp_h
+              if kem_sponge_capture_count < 4 then
+                tmp_h_words(kem_sponge_capture_count) <= kem_sponge_out_data;
+                kem_sponge_capture_count              <= kem_sponge_capture_count + 1;
+              end if;
+            when ST_HASH_G =>                                  -- kk' (0..3) y theta' (4..7)
+              if kem_sponge_capture_count < 4 then
+                kk_prime_words(kem_sponge_capture_count) <= kem_sponge_out_data;
+                kem_sponge_capture_count                 <= kem_sponge_capture_count + 1;
+              elsif kem_sponge_capture_count < 8 then
+                theta_prime_words(kem_sponge_capture_count - 4) <= kem_sponge_out_data;
+                kem_sponge_capture_count                        <= kem_sponge_capture_count + 1;
+              end if;
+            when ST_RE_ENCRYPT =>                              -- k_rej
+              if kem_sponge_capture_count < 4 then
+                k_reject_words(kem_sponge_capture_count) <= kem_sponge_out_data;
+                kem_sponge_capture_count                 <= kem_sponge_capture_count + 1;
+              end if;
+            when others =>
+              null;
+          end case;
+        end if;
 
-          when S_IDLE =>
-            if start = '1' and enc_ready = '1' then
-              enc_start <= '1';                       -- hqc_encaps entra en su S_KEY y espera ek
-              dk_idx    <= 0;
-              ct_idx    <= 0;
-              cmp_bad   <= '0';
-              cyc       <= (others => '0');
-              running   <= '1';
-              state     <= S_INGEST;
-            end if;
+        case main_state is
 
-          when S_INGEST =>                            -- dk_ready_i / ct_ready_i segun contadores
-            if dk_valid = '1' and dk_ready_i = '1' then
-              if dk_idx >= 281 and dk_idx <= 284 then
-                seed_dk_r(dk_idx - 281) <= dk_data;
-              elsif dk_idx >= 285 and dk_idx <= 286 then
-                sigma_r(dk_idx - 285) <= dk_data;
-              end if;                                  -- 0..280: reenviado a hqc_encaps ; 287..290: seed_kem, se ignora
-              dk_idx <= dk_idx + 1;
-            end if;
-            if ct_valid = '1' and ct_ready_i = '1' then
-              if ct_idx = U_LAST then
-                u_last_raw <= ct_data(7 downto 0);     -- byte 2208 de u tal cual (para comparar y para el hash)
-              elsif ct_idx >= CT_SALT_BASE then
-                salt_r(ct_idx - CT_SALT_BASE) <= ct_data;
-              end if;                                  -- u y v los escribe la RAM (ctu_we / ctv_we)
-              ct_idx <= ct_idx + 1;
-            end if;
-            if dk_idx = DK_WORDS and ct_idx = CT_WORDS then
-              f_go         <= '1';                     -- SHAKE256(seed_dk||01) sin limite
-              smp_start    <= '1';                     -- y = rej(66)
-              cyc_core     <= (others => '0');
-              core_running <= '1';
-              state        <= S_Y;
-            end if;
-
-          when S_Y =>
-            if smp_done = '1' then
-              abort_req <= '1';                        -- y listo: cortar el flujo del sponge
-              state     <= S_MULW;
+          when ST_IDLE =>
+            if start = '1' and encrypt_ready = '1' then
+              encrypt_start            <= '1';                 -- hqc_encrypt entra en su ingesta y espera ek
+              dk_word_index            <= 0;
+              ct_word_index            <= 0;
+              kem_sponge_capture_count <= 0;
+              ek_hash_command_pending  <= '1';                 -- primero el comando SHA3-256 del hash de ek
+              cycle_counter            <= (others => '0');
+              cycle_counter_running    <= '1';
+              main_state               <= ST_INGEST;
             end if;
 
-          when S_MULW =>
-            if mul_ready = '1' then
-              mul_start <= '1';
-              state     <= S_MUL;
+          when ST_INGEST =>
+            if ek_hash_command_pending = '1' and kem_sponge_in_ready = '1' then
+              ek_hash_command_pending <= '0';
+            end if;
+            dk_transfer := (dk_valid = '1' and dk_ready_internal = '1');
+            if dk_transfer then
+              if dk_word_index >= DK_INDEX_SEED_DK_FIRST and dk_word_index < DK_INDEX_SIGMA_FIRST then
+                seed_dk_words(dk_word_index - DK_INDEX_SEED_DK_FIRST) <= dk_data;
+              elsif dk_word_index >= DK_INDEX_SIGMA_FIRST and dk_word_index < DK_INDEX_SIGMA_FIRST + 2 then
+                sigma_words(dk_word_index - DK_INDEX_SIGMA_FIRST) <= dk_data;
+              end if;                                          -- 0..280 reenviado ; 287..290 seed_kem, se ignora
+              dk_word_index <= dk_word_index + 1;
+            end if;
+            ct_transfer := (ct_valid = '1' and ct_ready_internal = '1');
+            if ct_transfer then
+              if ct_word_index = CT_INDEX_U_LAST then
+                u_last_byte_raw <= ct_data(7 downto 0);        -- byte 2208 de u tal cual (para comparar y para el hash)
+              elsif ct_word_index >= CT_INDEX_SALT_FIRST then
+                salt_words(ct_word_index - CT_INDEX_SALT_FIRST) <= ct_data;
+              end if;                                          -- u y v los escriben las RAM
+              ct_word_index <= ct_word_index + 1;
+            end if;
+            if dk_word_index = DK_WORD_COUNT and ct_word_index = CT_WORD_COUNT and kem_sponge_capture_count = 4 then
+              -- todo recibido y tmp_h capturado: y = rej(SHAKE256(seed_dk||01))
+              reg_feed_source            <= SOURCE_SEED_DK;
+              reg_feed_command           <= COMMAND_SHAKE_Y_STREAM;
+              reg_feed_last_index        <= 4;
+              reg_feed_go                <= '1';
+              y_sampler_start            <= '1';
+              core_cycle_counter         <= (others => '0');
+              core_cycle_counter_running <= '1';
+              main_state                 <= ST_SAMPLE_Y;
             end if;
 
-          when S_MUL =>                                -- res = y * u
-            if mul_done = '1' then
-              dec_go <= '1';
-              state  <= S_DEC;
+          when ST_SAMPLE_Y =>
+            if y_sampler_done = '1' then
+              kem_sponge_abort <= '1';                         -- y listo: cortar el flujo del sponge
+              main_state       <= ST_START_POLY_MUL;
             end if;
 
-          when S_DEC =>                                -- RM + RS -> m'
-            if dec_fin = '1' then
-              inj_idx <= 0;
-              state   <= S_INJ;
+          when ST_START_POLY_MUL =>
+            if poly_mul_ready = '1' then
+              poly_mul_start <= '1';
+              main_state     <= ST_WAIT_POLY_MUL;
             end if;
 
-          when S_INJ =>                                -- m' (2 palabras) y salt (2) a hqc_encaps
-            if enc_key_ready = '1' then                -- enc_key_valid = '1' en este estado
-              if inj_idx = 3 then
-                cmp_idx   <= 0;
-                cmp_rd_ok <= '0';
-                state     <= S_REENC;
+          when ST_WAIT_POLY_MUL =>                             -- res = y * u
+            if poly_mul_done = '1' then
+              decode_go  <= '1';
+              main_state <= ST_DECODE_M_PRIME;
+            end if;
+
+          when ST_DECODE_M_PRIME =>                            -- RM + RS -> m'
+            if decode_finished = '1' then
+              reg_feed_source          <= SOURCE_G_MESSAGE;
+              reg_feed_command         <= COMMAND_SHA3_512_G;
+              reg_feed_last_index      <= 8;
+              reg_feed_go              <= '1';
+              kem_sponge_capture_count <= 0;
+              main_state               <= ST_HASH_G;
+            end if;
+
+          when ST_HASH_G =>                                    -- kk' y theta' capturados (arriba)
+            if kem_sponge_capture_count = 8 then
+              inject_word_index <= 0;
+              main_state        <= ST_SEND_ENCRYPT_INPUT;
+            end if;
+
+          when ST_SEND_ENCRYPT_INPUT =>                        -- m' (2 palabras) y theta' (4), encrypt_in_valid = '1'
+            if encrypt_in_ready = '1' then
+              if inject_word_index = 5 then
+                k_reject_feed_go         <= '1';               -- k_rej corre en paralelo con el re-cifrado
+                kem_sponge_capture_count <= 0;
+                encrypt_done_latched     <= '0';
+                main_state               <= ST_RE_ENCRYPT;
               else
-                inj_idx <= inj_idx + 1;
+                inject_word_index <= inject_word_index + 1;
               end if;
             end if;
 
-          when S_REENC =>
-            xfer := (enc_out_valid = '1' and enc_out_ready = '1');
-            if xfer then
-              cmp_rd_ok <= '0';
-              case enc_out_part is
-                when "00" =>                           -- ss' = kk'
-                  if cmp_idx < 4 then
-                    kkp_r(cmp_idx) <= enc_out_data;
-                  end if;
-                when "01" =>                           -- v'
-                  if enc_out_data /= ctv_rdata then
-                    cmp_bad <= '1';
-                  end if;
-                when "10" =>                           -- u' (la ultima palabra: solo el byte bajo)
-                  if cmp_idx = U_LAST then
-                    if enc_out_data(7 downto 0) /= u_last_raw then
-                      cmp_bad <= '1';
-                    end if;
-                  elsif enc_out_data /= ctu_rdata then
-                    cmp_bad <= '1';
-                  end if;
-                when others =>                         -- salt'
-                  if enc_out_data /= salt_r(cmp_idx mod 2) then
-                    cmp_bad <= '1';
-                  end if;
-              end case;
-              if enc_out_last = '1' then
-                cmp_idx <= 0;
-              else
-                cmp_idx <= cmp_idx + 1;
-              end if;
-            else
-              cmp_rd_ok <= '1';                        -- la direccion de la RAM lleva >= 1 ciclo estable
-            end if;
-            if enc_done = '1' then
-              kf_go   <= '1';
-              cap_cnt <= 0;
-              state   <= S_KREJ;
+          when ST_RE_ENCRYPT =>                                -- compare_fsm consume (u', v'); k_reject_feed_fsm hace el hash
+            if encrypt_done_latched = '1' and k_reject_feed_busy = '0' and kem_sponge_capture_count = 4 then
+              ss_output_word_index         <= 0;
+              cycle_counter_running        <= '0';
+              core_cycle_counter_running   <= '0';
+              cycles_at_ss_ready           <= cycle_counter;
+              core_cycles_at_ss_ready      <= core_cycle_counter;
+              main_state                   <= ST_OUTPUT_SS;
             end if;
 
-          when S_KREJ =>                               -- hash de k_rej (kf) y captura de su salida
-            if sp_out_valid = '1' then
-              if cap_cnt < 4 then
-                krej_r(cap_cnt) <= sp_out_data;
-              end if;
-              if cap_cnt < 4 then
-                cap_cnt <= cap_cnt + 1;
-              end if;
-            end if;
-            if cap_cnt = 4 then
-              out_i          <= 0;
-              running        <= '0';
-              core_running   <= '0';
-              cycles_r       <= cyc;
-              cycles_core_r  <= cyc_core;
-              state          <= S_OUT;
-            end if;
-
-          when S_OUT =>                                -- ss = match ? kk' : k_rej
+          when ST_OUTPUT_SS =>                                 -- ss = match ? kk' : k_rej
             if out_ready = '1' then
-              if out_i = 3 then
-                state <= S_DONE;
+              if ss_output_word_index = 3 then
+                main_state <= ST_DONE;
               else
-                out_i <= out_i + 1;
+                ss_output_word_index <= ss_output_word_index + 1;
               end if;
             end if;
 
-          when S_DONE =>
-            state <= S_IDLE;
+          when ST_DONE =>
+            main_state <= ST_IDLE;
 
         end case;
       end if;

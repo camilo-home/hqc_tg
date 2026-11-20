@@ -11,9 +11,9 @@ use work.RS_FUNCTIONS.get_word_length_from_rs_gf;
 
 entity rs_encoder is
         generic (
-            N : natural range 2 to 1023;
-			K : natural range 1 to 1022;
-			RS_GF : RSGFSize := RS_GF_NONE;
+            N : natural range 2 to 1023 := 46;
+			K : natural range 1 to 1022 := 16;
+			RS_GF : RSGFSize := RS_GF_256;
 			TEST_MODE : boolean := false
    	  );
         port (

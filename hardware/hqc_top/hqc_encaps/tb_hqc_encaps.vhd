@@ -717,6 +717,7 @@ architecture sim of tb_hqc_encaps is
   signal out_data  : std_logic_vector(63 downto 0);
   signal out_last  : std_logic;
   signal out_part  : std_logic_vector(1 downto 0);
+  signal tmp_h : std_logic_vector(255 downto 0);
   signal cycles, cycles_core : unsigned(31 downto 0);
   signal err : std_logic;
   signal dbg_state : std_logic_vector(3 downto 0);
@@ -738,7 +739,7 @@ begin
     port map(clk => clk, rst => rst, start => start, ready => ready, done => done,
              key_valid => key_valid, key_ready => key_ready, key_data => key_data,
              out_valid => out_valid, out_ready => out_ready, out_data => out_data,
-             out_last => out_last, out_part => out_part,
+             out_last => out_last, out_part => out_part, tmp_h => tmp_h,
              cycles => cycles, cycles_core => cycles_core, err => err, dbg_state => dbg_state);
 
   key_data <= KEYS(case_sel)(kf_idx);

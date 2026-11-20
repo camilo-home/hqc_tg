@@ -19,14 +19,15 @@ use WORK.RS_COMPONENTS.rs_berlekamp_massey;
 use work.RS_FUNCTIONS.get_word_length_from_rs_gf;
 use work.RS_FUNCTIONS.get_t;
 
+-- CONFIGURACION PARA HQC v5.0
 entity rs_decoder is
 	  generic (
-            N : natural range 2 to 1023;
-			K : natural range 1 to 1022;
-            RS_GF : RSGFSize := RS_GF_NONE;
-            OUTPUT_PARITY_SYMBOLS : boolean := true;
-            FCR : natural range 0 to 1022 := 0;
-            PRIMITIVE_POLYNOMIAL : natural range 0 to 2047 := 0;
+            N : natural range 2 to 1023 := 46;
+			K : natural range 1 to 1022 := 16;
+            RS_GF : RSGFSize := RS_GF_256;
+            OUTPUT_PARITY_SYMBOLS : boolean := false;
+            FCR : natural range 0 to 1022 := 1;
+            PRIMITIVE_POLYNOMIAL : natural range 0 to 2047 := 285;
             TEST_MODE : boolean := false
 	  );
 	  port (

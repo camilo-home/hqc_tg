@@ -66,6 +66,7 @@ entity hqc_encaps is
     out_data  : out std_logic_vector(63 downto 0);
     out_last  : out std_logic;
     out_part  : out std_logic_vector(1 downto 0);
+    tmp_h     : out std_logic_vector(255 downto 0);  -- SHA3-256(ek||01)
 
     cycles      : out unsigned(31 downto 0);
     cycles_core : out unsigned(31 downto 0);
@@ -259,6 +260,7 @@ architecture rtl of hqc_encaps is
 
 begin
 
+  tmp_h <= tmp_h_r(0) & tmp_h_r(1) & tmp_h_r(2) & tmp_h_r(3);
   ---------------------------------------------------------------------------
   -- Instancias
   ---------------------------------------------------------------------------
@@ -305,7 +307,6 @@ begin
               mem_we => xor_mem_we, mem_addr => xor_mem_addr, mem_din => xor_mem_din, mem_dout => xor_mem_dout);
 
   u_rs : entity work.rs_encoder
-    generic map (N => 46, K => 16, RS_GF => RS_GF_256, TEST_MODE => false)
     port map (clk => clk, rst => rst,
               i_end_codeword => rs_i_end, i_start_codeword => rs_start_cw,
               i_valid => rs_i_valid, i_consume => rs_consume, i_symbol => rs_i_symbol,
