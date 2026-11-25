@@ -77,11 +77,15 @@ vcom -2008 reed-muller-x3/rm_encoder.vhd
 vcom -2008 reed-muller-x3/rm_decoder.vhd
 
 # modulos hqc top
-#vcom -2008 hqc_top/hqc_keygen/hqc_keygen.vhd
+vcom -2008 hqc_top/hqc_keygen/hqc_keygen.vhd
 #vcom -2008 hqc_top/hqc_keygen/tb_hqc_keygen.vhd
 
-#vcom -2008 hqc_top/hqc_encaps/hqc_encaps.vhd
+vcom -2008 hqc_top/hqc_encaps/hqc_encaps.vhd
 #vcom -2008 hqc_top/hqc_encaps/tb_hqc_encaps.vhd
 
-#vcom -2008 hqc_top/hqc_decaps/hqc_decaps.vhd
+vcom -2008 hqc_top/hqc_decaps/hqc_encrypt.vhd
+vcom -2008 hqc_top/hqc_decaps/hqc_decaps.vhd
 #vcom -2008 hqc_top/hqc_decaps/tb_hqc_decaps.vhd
+
+vcom -2008 hqc_top/hqc_kem_pipeline.vhd
+vcom -2008 hqc_top/tb_hqc_kem_pipeline.vhd
