@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity de2_115_hqc_kem_wrapper is
+entity wrapper_kat0 is
   port(
     CLOCK_50 : in  std_logic;
     KEY      : in  std_logic_vector(3 downto 0);   -- KEY(0): reset (activo en bajo)
@@ -11,7 +11,7 @@ entity de2_115_hqc_kem_wrapper is
   );
 end entity;
 
-architecture rtl of de2_115_hqc_kem_wrapper is
+architecture rtl of wrapper_kat0 is
 
   -- Vectores KAT en palabras de 64 bits little-endian
   constant SEED_W0 : std_logic_vector(63 downto 0) := x"C3040E05600DFCCE";
