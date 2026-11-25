@@ -1,4 +1,4 @@
-<session jtag_chain="USB-Blaster [1-2]" jtag_device="@1: 10CL120(Y|Z)/EP3C120/.. (0x020F70DD)" sof_file="hqc128.sof">
+<session jtag_chain="" jtag_device="" sof_file="hqc128.sof">
   <display_tree gui_logging_enabled="0">
     <display_branch instance="auto_signaltap_0" log="USE_GLOBAL_TEMP" signal_set="USE_GLOBAL_TEMP" trigger="USE_GLOBAL_TEMP"/>
   </display_tree>
@@ -3158,7 +3158,7 @@
         <trigger_in_editor/>
         <trigger_out_editor/>
       </presentation>
-      <trigger CRC="6C9133B9" attribute_mem_mode="false" gap_record="true" global_temp="1" is_expanded="true" name="trigger: 2026/11/24 23:47:58  #0" position="pre" power_up_trigger_mode="false" record_data_gap="true" segment_size="1024" storage_mode="off" storage_qualifier_disabled="no" storage_qualifier_port_is_pin="true" storage_qualifier_port_name="auto_stp_external_storage_qualifier" storage_qualifier_port_tap_mode="classic" trigger_type="circular">
+      <trigger CRC="6C9133B9" attribute_mem_mode="false" gap_record="true" global_temp="1" is_expanded="true" name="trigger: 2026/11/24 23:47:58  #0" position="pre" power_up_trigger_mode="false" record_data_gap="true" segment_size="1024" storage_mode="off" storage_qualifier_disabled="no" storage_qualifier_port_is_pin="false" storage_qualifier_port_name="auto_stp_external_storage_qualifier" storage_qualifier_port_tap_mode="classic" trigger_type="circular">
         <power_up_trigger position="pre" storage_qualifier_disabled="no"/>
         <events use_custom_flow_control="no">
           <level enabled="yes" name="condition1" type="basic">'pipeline_done' == rising edge
